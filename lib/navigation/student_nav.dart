@@ -181,8 +181,8 @@ class StudentNavState extends State<StudentNav> {
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
               child: Container(
-                height: 68,
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                height: 70,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
@@ -209,13 +209,12 @@ class StudentNavState extends State<StudentNav> {
                   ),
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, 'Tổng quan'),
-                    _buildNavItem(1, Icons.fact_check_rounded, Icons.fact_check_outlined, 'Nhiệm vụ'),
-                    _buildCenterNavItem(2, Icons.auto_awesome_rounded, 'Điểm danh'),
-                    _buildNavItem(3, Icons.menu_book_rounded, Icons.menu_book_outlined, 'Cẩm nang'),
-                    _buildNavItem(4, Icons.smart_toy_rounded, Icons.smart_toy_outlined, 'AI Chat'),
+                    Expanded(child: _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, 'Tổng quan')),
+                    Expanded(child: _buildNavItem(1, Icons.fact_check_rounded, Icons.fact_check_outlined, 'Nhiệm vụ')),
+                    Expanded(child: _buildCenterNavItem(2, Icons.auto_awesome_rounded, 'Điểm danh')),
+                    Expanded(child: _buildNavItem(3, Icons.menu_book_rounded, Icons.menu_book_outlined, 'Cẩm nang')),
+                    Expanded(child: _buildNavItem(4, Icons.smart_toy_rounded, Icons.smart_toy_outlined, 'AI Chat')),
                   ],
                 ),
               ),
@@ -237,40 +236,47 @@ class StudentNavState extends State<StudentNav> {
       borderRadius: BorderRadius.circular(20),
       splashColor: AppTheme.primary.withValues(alpha: 0.1),
       highlightColor: Colors.transparent,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? activeColor.withValues(alpha: isDark ? 0.20 : 0.15)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: isSelected
-              ? Border.all(
-                  color: activeColor.withValues(alpha: 0.25),
-                  width: 1,
-                )
-              : null,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isSelected ? activeIcon : inactiveIcon,
-              color: isSelected ? activeColor : inactiveColor,
-              size: 22,
-            ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+      child: Center(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? activeColor.withValues(alpha: isDark ? 0.20 : 0.15)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            border: isSelected
+                ? Border.all(
+                    color: activeColor.withValues(alpha: 0.30),
+                    width: 1,
+                  )
+                : null,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                isSelected ? activeIcon : inactiveIcon,
                 color: isSelected ? activeColor : inactiveColor,
+                size: 21,
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 9.8,
+                  letterSpacing: -0.2,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected ? activeColor : inactiveColor,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -286,43 +292,51 @@ class StudentNavState extends State<StudentNav> {
       onTap: () => setState(() => _currentIndex = index),
       borderRadius: BorderRadius.circular(24),
       splashColor: Colors.transparent,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 250),
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppTheme.primary, AppTheme.accentAmber],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.5),
-                width: 1.2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.primary.withValues(alpha: isSelected ? 0.50 : 0.25),
-                  blurRadius: isSelected ? 14 : 8,
-                  offset: const Offset(0, 3),
+      highlightColor: Colors.transparent,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppTheme.primary, AppTheme.accentAmber],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-              ],
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  width: 1.2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primary.withValues(alpha: isSelected ? 0.50 : 0.25),
+                    blurRadius: isSelected ? 12 : 7,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Icon(icon, color: Colors.white, size: 19),
             ),
-            child: Icon(icon, color: Colors.white, size: 20),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-              color: isSelected ? activeColor : inactiveColor,
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 9.8,
+                letterSpacing: -0.2,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? activeColor : inactiveColor,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

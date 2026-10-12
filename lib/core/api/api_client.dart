@@ -22,10 +22,15 @@ class ApiClient {
   static void Function()? onUnauthorized;
 
   static void init() {
+    _dio.options.baseUrl = AppConstants.apiBaseUrl;
     _dio.interceptors.add(
       InterceptorsWrapper(
         // ── Attach access token ────────────────────────────────────────────
         onRequest: (options, handler) async {
+          // Luôn đảm bảo dùng đúng API URL (chuyển 127.0.0.1 sang IP LAN trên máy thật)
+          if (options.baseUrl.isEmpty || options.baseUrl.contains('127.0.0.1')) {
+            options.baseUrl = AppConstants.apiBaseUrl;
+          }
           final token = await StorageUtil.getToken();
           if (token != null) {
             options.headers['Authorization'] = 'Bearer $token';
@@ -37,23 +42,38 @@ class ApiClient {
 
         // ── Auto-fallback host on connection error & Auto-refresh on 401 ────
         onError: (DioException e, handler) async {
-          // 1. Tự động chuyển đổi giữa 127.0.0.1 và 10.0.2.2 nếu lỗi kết nối trên Android Emulator
+          // 1. Tự động thử các host dự phòng (LAN IP, 127.0.0.1, 10.0.2.2) nếu lỗi kết nối hoặc timeout
           if (e.type == DioExceptionType.connectionError ||
-              e.message?.contains('Connection refused') == true) {
-            final currentBase = _dio.options.baseUrl;
-            final altBase = currentBase.contains('127.0.0.1')
-                ? currentBase.replaceAll('127.0.0.1', '10.0.2.2')
-                : currentBase.replaceAll('10.0.2.2', '127.0.0.1');
+              e.type == DioExceptionType.connectionTimeout ||
+              e.type == DioExceptionType.sendTimeout ||
+              e.type == DioExceptionType.receiveTimeout ||
+              e.message?.contains('Connection refused') == true ||
+              e.message?.contains('took longer') == true) {
+            final candidates = [
+              'http://192.168.43.25:8000',
+              'http://127.0.0.1:8000',
+              'http://10.0.2.2:8000',
+            ];
+            final currentBase = e.requestOptions.baseUrl.isNotEmpty 
+                ? e.requestOptions.baseUrl 
+                : _dio.options.baseUrl;
+            final remaining = candidates.where((c) => c != currentBase).toList();
 
-            if (currentBase != altBase && !e.requestOptions.extra.containsKey('retried_alt_host')) {
-              _dio.options.baseUrl = altBase;
-              final retryOpts = e.requestOptions;
-              retryOpts.extra['retried_alt_host'] = true;
-              retryOpts.path = retryOpts.path.replaceAll(currentBase, altBase);
-              try {
-                final retryResp = await _dio.fetch(retryOpts);
-                return handler.resolve(retryResp);
-              } catch (_) {}
+            if (!e.requestOptions.extra.containsKey('retried_alt_host')) {
+              for (final altBase in remaining) {
+                _dio.options.baseUrl = altBase;
+                final retryOpts = e.requestOptions;
+                retryOpts.extra['retried_alt_host'] = true;
+                retryOpts.baseUrl = altBase;
+                retryOpts.connectTimeout = const Duration(seconds: 4);
+                if (retryOpts.path.startsWith('http')) {
+                  retryOpts.path = retryOpts.path.replaceAll(currentBase, altBase);
+                }
+                try {
+                  final retryResp = await _dio.fetch(retryOpts);
+                  return handler.resolve(retryResp);
+                } catch (_) {}
+              }
             }
           }
 
@@ -103,5 +123,8 @@ class ApiClient {
     );
   }
 
-  static Dio get instance => _dio;
+  static Dio get instance {
+    _dio.options.baseUrl = AppConstants.apiBaseUrl;
+    return _dio;
+  }
 }

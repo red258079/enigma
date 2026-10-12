@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
 
     # Google OAuth
-    GOOGLE_CLIENT_ID: str = "1028134720370-g39rh2ojgtdkl3646cc0uacjaq9k31mr.apps.googleusercontent.com"
-    GOOGLE_ANDROID_CLIENT_ID: str = "1028134720370-dpofimf31oks1f48ivk9bf6qfpd0dl2g.apps.googleusercontent.com"
+    GOOGLE_CLIENT_ID: str = "36729513984-esqq4r98jnm3utb4grbj6gu6if5l6cqi.apps.googleusercontent.com"
+    GOOGLE_ANDROID_CLIENT_ID: str = "36729513984-esqq4r98jnm3utb4grbj6gu6if5l6cqi.apps.googleusercontent.com"
 
     # Firebase (path to service account JSON)
     FIREBASE_CREDENTIALS_PATH: str = "firebase_credentials.json"

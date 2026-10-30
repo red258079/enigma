@@ -30,6 +30,28 @@ class ChatService:
         return list(result.scalars().all())
 
     @staticmethod
+    async def delete_session(db: AsyncSession, user_id, session_id) -> bool:
+        from uuid import UUID as PyUUID
+        try:
+            sess_uuid = PyUUID(str(session_id))
+        except Exception:
+            sess_uuid = session_id
+
+        result = await db.execute(
+            select(ChatSession).where(ChatSession.id == sess_uuid)
+        )
+        session = result.scalar_one_or_none()
+        if session:
+            # So sánh user_id an toàn (chuỗi hoặc UUID không phân biệt dấu gạch nối)
+            uid_str = str(user_id).replace("-", "").lower()
+            sess_uid_str = str(session.user_id).replace("-", "").lower()
+            if uid_str == sess_uid_str:
+                session.is_active = False
+                await db.commit()
+                return True
+        return False
+
+    @staticmethod
     async def send_user_message_and_get_rag_reply(
         db: AsyncSession,
         user_id,
@@ -38,9 +60,16 @@ class ChatService:
         user_name: str = "Sinh viên",
         intern_phase: str = "adaptation",
         stress_level: int = 2,
-        sleep_hours: float = 7.0,
+        sleep_hours: Optional[float] = None,
         recent_symptoms: Optional[List[str]] = None
     ) -> Dict[str, Any]:
+        # Cập nhật tiêu đề phiên theo câu hỏi đầu tiên của sinh viên
+        sess_res = await db.execute(select(ChatSession).where(ChatSession.id == session_id))
+        sess = sess_res.scalar_one_or_none()
+        if sess and (sess.title == "Tư vấn Enigma AI" or sess.title == "Tư vấn Thích nghi & Tâm lý" or not sess.title):
+            clean_title = content.strip().replace("\n", " ")
+            sess.title = clean_title[:45] + ("..." if len(clean_title) > 45 else "")
+
         # 1. Save user message
         user_msg = ChatMessage(session_id=session_id, is_user=True, content=content)
         db.add(user_msg)

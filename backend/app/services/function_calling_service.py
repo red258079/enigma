@@ -1,4 +1,4 @@
-﻿"""
+"""
 Function Calling Service - AI Agent Tool Executor
 """
 import json
@@ -187,7 +187,7 @@ class FunctionCallingService:
         user_id = args.get("user_id")
         days_limit = min(int(args.get("days_limit", 7)), 30)
         if not db or not user_id:
-            return {"status": "no_data", "avg_sleep_hours": 7.0, "avg_stress_level": 2, "total_entries": 0}
+            return {"status": "no_data", "avg_sleep_hours": None, "avg_stress_level": 2, "total_entries": 0}
         try:
             from app.db.models.journal import Journal
             since_date = date.today() - timedelta(days=days_limit)
@@ -197,7 +197,8 @@ class FunctionCallingService:
             journals = list(result.scalars().all())
             if not journals:
                 return {"status": "no_data", "user_id": str(user_id), "total_entries": 0}
-            avg_sleep = sum(float(j.sleep_hours) for j in journals) / len(journals)
+            valid_sleep = [float(j.sleep_hours) for j in journals if j.sleep_hours is not None]
+            avg_sleep = (sum(valid_sleep) / len(valid_sleep)) if valid_sleep else None
             avg_stress = sum(j.stress_level for j in journals) / len(journals)
             all_symptoms = []
             for j in journals:
@@ -214,7 +215,7 @@ class FunctionCallingService:
                     trend = "improving"
             return {
                 "status": "ok", "user_id": str(user_id), "days_analyzed": days_limit,
-                "total_entries": len(journals), "avg_sleep_hours": round(avg_sleep, 1),
+                "total_entries": len(journals), "avg_sleep_hours": round(avg_sleep, 1) if avg_sleep is not None else None,
                 "avg_stress_level": round(avg_stress, 1), "stress_trend": trend,
                 "common_symptoms": list(set(all_symptoms))[:5],
                 "latest_date": str(journals[0].journal_date)
@@ -238,7 +239,8 @@ class FunctionCallingService:
             journal_data = [
                 {
                     "date": str(j.journal_date), "stress_level": j.stress_level,
-                    "sleep_hours": float(j.sleep_hours), "symptoms": j.physical_symptoms or [],
+                    "sleep_hours": float(j.sleep_hours) if j.sleep_hours is not None else None,
+                    "symptoms": j.physical_symptoms or [],
                     "sentiment": j.ai_sentiment,
                     "note_preview": ((j.note or "")[:150] + "...") if j.note and len(j.note) > 150 else j.note
                 }
@@ -332,7 +334,7 @@ class FunctionCallingService:
                 "journal_today": {
                     "has_journal": journal is not None,
                     "stress_level": journal.stress_level if journal else None,
-                    "sleep_hours": float(journal.sleep_hours) if journal else None,
+                    "sleep_hours": float(journal.sleep_hours) if (journal and journal.sleep_hours is not None) else None,
                     "sentiment": journal.ai_sentiment if journal else None
                 }
             }

@@ -115,7 +115,6 @@ async def send_message(
         content=payload.content,
         user_name=user.full_name,
         stress_level=payload.stress_level or 2,
-        sleep_hours=payload.sleep_hours,
         recent_symptoms=payload.recent_symptoms or []
     )
 
@@ -155,6 +154,9 @@ async def stream_message(
     await db.commit()
     await db.refresh(user_msg)
 
+    # 2. Lấy số giờ ngủ thực tế từ DB trong 36h gần nhất (bỏ qua payload.sleep_hours do client gửi)
+    recent_sleep = await ChatService.get_recent_sleep_hours(db, user.id)
+
     async def event_generator():
         collected_chunks = []
         rag_sources_cache = []
@@ -164,7 +166,7 @@ async def stream_message(
                 query=payload.content,
                 user_name=user.full_name,
                 stress_level=payload.stress_level or 2,
-                sleep_hours=payload.sleep_hours,
+                sleep_hours=recent_sleep,
                 recent_symptoms=payload.recent_symptoms or [],
                 user_id=str(user.id),
                 db=db,

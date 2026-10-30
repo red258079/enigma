@@ -52,6 +52,31 @@ class ChatService:
         return False
 
     @staticmethod
+    async def get_recent_sleep_hours(db: AsyncSession, user_id) -> Optional[float]:
+        """
+        Lấy số giờ ngủ từ bản ghi journal gần nhất của user trong vòng 36 giờ qua.
+        - user_id được lấy từ authenticated token, không bao giờ lấy từ client/request body.
+        - Chỉ lấy bản ghi trong vòng 36 giờ gần nhất; quá thời gian này trả về None (unknown).
+        """
+        from datetime import datetime, timezone, timedelta
+        from sqlalchemy import select, desc
+        from app.db.models.journal import Journal
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=36)
+        stmt = (
+            select(Journal.sleep_hours)
+            .where(
+                Journal.user_id == user_id,
+                Journal.created_at >= cutoff
+            )
+            .order_by(desc(Journal.created_at))
+            .limit(1)
+        )
+        result = await db.execute(stmt)
+        val = result.scalar_one_or_none()
+        return float(val) if val is not None else None
+
+    @staticmethod
     async def send_user_message_and_get_rag_reply(
         db: AsyncSession,
         user_id,
@@ -60,7 +85,6 @@ class ChatService:
         user_name: str = "Sinh viên",
         intern_phase: str = "adaptation",
         stress_level: int = 2,
-        sleep_hours: Optional[float] = None,
         recent_symptoms: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         # Cập nhật tiêu đề phiên theo câu hỏi đầu tiên của sinh viên
@@ -75,13 +99,16 @@ class ChatService:
         db.add(user_msg)
         await db.flush()
 
-        # 2. Call Advanced RAG Engine Service (with Function Calling support)
+        # 2. Luôn đọc giờ ngủ thực tế từ DB của user trong 36h qua (bỏ qua giá trị client gửi)
+        actual_sleep_hours = await ChatService.get_recent_sleep_hours(db, user_id)
+
+        # 3. Call Advanced RAG Engine Service (with Function Calling support)
         rag_res = await AdvancedRAGService.generate_advanced_rag_response(
             query=content,
             user_name=user_name,
             intern_phase=intern_phase,
             stress_level=stress_level,
-            sleep_hours=sleep_hours,
+            sleep_hours=actual_sleep_hours,
             recent_symptoms=recent_symptoms,
             user_id=str(user_id),
             db=db,

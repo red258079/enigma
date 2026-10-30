@@ -10,7 +10,7 @@ Endpoints:
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Header, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 
 from app.db.database import get_db
@@ -30,6 +30,20 @@ class CreateLifeLogRequest(BaseModel):
     mood_note: Optional[str] = Field(None, max_length=1000, description="Ghi chú tâm trạng (tối đa 1000 ký tự)")
     activities_done: Optional[List[str]] = Field(default=[], description="Hoạt động đã làm trong ca")
     water_intake_ml: Optional[int] = Field(None, ge=0, le=5000, description="Lượng nước uống (ml)")
+
+    @field_validator("shift_type")
+    @classmethod
+    def validate_shift_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        val = v.lower().strip()
+        if not val:
+            return None
+        if val in ("shift_day", "shift_night"):
+            val = val.replace("shift_", "")
+        if val not in ("day", "night"):
+            raise ValueError("shift_type không hợp lệ. Chỉ chấp nhận 'day' hoặc 'night'.")
+        return val
 
 
 # ─── Auth Dependency ──────────────────────────────────────────────────────────
@@ -81,6 +95,7 @@ async def create_life_log(
         "stress_description": result["stress_description"],
         "sleep_hours": float(j.sleep_hours),
         "sleep_quality": result["sleep_quality"],
+        "shift_type": j.shift_type,
         "physical_symptoms": j.physical_symptoms or [],
         "mood_note": j.note,
         "ai_sentiment": j.ai_sentiment,

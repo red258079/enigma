@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # Google Gemini
     GEMINI_API_KEY: str = ""
 
+    # Groq AI LPU
+    GROQ_API_KEY: str = ""
+
     # Google OAuth
     GOOGLE_CLIENT_ID: str = "36729513984-esqq4r98jnm3utb4grbj6gu6if5l6cqi.apps.googleusercontent.com"
     GOOGLE_ANDROID_CLIENT_ID: str = "36729513984-esqq4r98jnm3utb4grbj6gu6if5l6cqi.apps.googleusercontent.com"

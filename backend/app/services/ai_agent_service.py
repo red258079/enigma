@@ -69,7 +69,7 @@ class AIAgentService:
     @staticmethod
     def evaluate_psychological_risk(
         stress_level: int,
-        sleep_hours: float,
+        sleep_hours: Optional[float] = None,
         note_text: Optional[str] = None,
         physical_symptoms: Optional[List[str]] = None,
         stress_history_last_3_days: Optional[List[int]] = None
@@ -112,14 +112,14 @@ class AIAgentService:
 
         # --- YELLOW RISK EVALUATION ---
         is_moderate_stress = stress_level >= 3
-        is_sleep_deprived = sleep_hours < 6.0
+        is_sleep_deprived = (sleep_hours is not None) and (sleep_hours < 6.0)
         has_physical_symptoms = bool(physical_symptoms and len(physical_symptoms) > 0)
         has_moderate_keyword = any(kw in note_text_lower for kw in MODERATE_RISK_KEYWORDS)
 
         if is_moderate_stress or is_sleep_deprived or has_physical_symptoms or has_moderate_keyword:
             if is_moderate_stress:
                 reasons.append(f"Mức độ stress tăng cao ({stress_level}/5).")
-            if is_sleep_deprived:
+            if is_sleep_deprived and sleep_hours is not None:
                 reasons.append(f"Thiếu ngủ nghiêm trọng (chỉ ngủ {sleep_hours}h).")
             if has_physical_symptoms:
                 reasons.append(f"Có triệu chứng thể chất ca làm: {', '.join(physical_symptoms or [])}.")

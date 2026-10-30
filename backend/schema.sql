@@ -79,6 +79,7 @@ CREATE TABLE journals (
     journal_date      DATE NOT NULL,
     stress_level      SMALLINT NOT NULL CHECK (stress_level BETWEEN 1 AND 5),
     sleep_hours       NUMERIC(3,1) NOT NULL CHECK (sleep_hours BETWEEN 0 AND 24),
+    shift_type        TEXT,
     physical_symptoms TEXT[] DEFAULT '{}',
     note              TEXT,
     ai_sentiment      VARCHAR(20),
@@ -86,6 +87,7 @@ CREATE TABLE journals (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_journal_user_date UNIQUE (user_id, journal_date)
 );
+ALTER TABLE journals ADD COLUMN IF NOT EXISTS shift_type text;
 CREATE INDEX idx_journals_user_date ON journals (user_id, journal_date DESC);
 
 -- 6. TASKS MASTER LIST
@@ -227,6 +229,17 @@ CREATE TABLE refresh_tokens (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_refresh_tokens_user ON refresh_tokens (user_id);
+
+-- 12. USER FEATURE ONBOARDINGS (Contextual Coach Marks status)
+CREATE TABLE user_feature_onboardings (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    feature_key  VARCHAR(50) NOT NULL,
+    completed    BOOLEAN NOT NULL DEFAULT TRUE,
+    completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_user_feature_onboarding UNIQUE (user_id, feature_key)
+);
+CREATE INDEX idx_user_feature_onboarding_user ON user_feature_onboardings (user_id);
 
 -- AUTO-UPDATE updated_at TRIGGER
 CREATE OR REPLACE FUNCTION update_updated_at_column()

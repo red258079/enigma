@@ -57,7 +57,7 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> sendMessage(String text, {int stressLevel = 3, double sleepHours = 6.0}) async {
+  Future<void> sendMessage(String text, {int stressLevel = 3, double? sleepHours}) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 

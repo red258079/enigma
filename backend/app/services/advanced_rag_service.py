@@ -2,12 +2,19 @@ import logging
 import asyncio
 from typing import List, Dict, Any, Optional
 import google.generativeai as genai
+import httpx
 
 from app.core.config import settings
 from app.services.vector_store_service import VectorStoreService
 from app.services.ai_agent_service import AIAgentService, RiskAssessmentResult
 
 logger = logging.getLogger(__name__)
+
+# Danh sách Model Groq AI LPU siêu tốc
+GROQ_MODELS = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+]
 
 # Danh sách Model Gemini ưu tiên theo độ tin cậy và hạn mức (Failover Cascade)
 GEMINI_MODELS = [
@@ -74,7 +81,7 @@ class AdvancedRAGService:
         user_name: str = "Sinh viên",
         intern_phase: str = "adaptation",
         stress_level: int = 2,
-        sleep_hours: float = 7.0,
+        sleep_hours: Optional[float] = None,
         recent_symptoms: Optional[List[str]] = None,
         top_k: int = 3,
         user_id: Optional[str] = None,
@@ -142,6 +149,12 @@ Nhiệm vụ: Chào hỏi bạn {user_name} một cách ấm áp, thân thiện 
             system_prompt = f"""Bạn là Enigma AI — Trợ lý Thực tập LG Display.
 Nhiệm vụ: Cảm ơn bạn {user_name}, gửi lời chúc bạn có một ca làm việc an toàn, nhiều năng lượng và nhắc bạn luôn có Enigma bên cạnh khi cần hỗ trợ."""
         else:
+            sleep_info = f"{sleep_hours}h" if sleep_hours is not None else "Chưa có dữ liệu (chưa rõ)"
+            if sleep_hours is None:
+                sleep_instruction = f"5. DỮ LIỆU GIẤC NGỦ: Hiện tại hệ thống CHƯA CÓ dữ liệu giấc ngủ ca gần nhất của bạn {user_name} (chưa rõ). Tuyệt đối KHÔNG tự giả định bạn ấy đã ngủ đủ 7 tiếng. Nếu sinh viên nhắc đến mệt mỏi, uể oải, ca kíp hay sức khỏe, hãy ân cần hỏi thăm xem ca vừa rồi bạn ấy ngủ được khoảng mấy tiếng."
+            else:
+                sleep_instruction = f"5. DỮ LIỆU GIẤC NGỦ: Ca gần nhất bạn {user_name} ngủ {sleep_hours}h. Hãy cân nhắc thông tin này khi tư vấn sức khỏe và phục hồi năng lượng."
+
             system_prompt = f"""Bạn là Enigma AI — Trợ lý Đồng hành Tâm lý, Sức khỏe & Thích nghi Thực tập Doanh nghiệp tại LG Display.
 
 🎯 NGUYÊN TẮC PHẢN HỒI:
@@ -149,39 +162,73 @@ Nhiệm vụ: Cảm ơn bạn {user_name}, gửi lời chúc bạn có một ca 
 2. Nếu có cẩm nang liên quan bên dưới, hãy trích dẫn rõ [Nguồn X: Tên bài viết] và ứng dụng vào câu trả lời.
 3. Đưa ra 2-3 lời khuyên hành động thực tế, khoa học và dễ làm theo.
 4. Xưng hô thân thiện "mình - bạn" hoặc "Enigma - {user_name}".
+{sleep_instruction}
 
 👤 THÔNG TIN SINH VIÊN:
-- Tên: {user_name} | Chặng: {intern_phase} | Stress: {stress_level}/5 | Ngủ: {sleep_hours}h | Triệu chứng: {', '.join(recent_symptoms) if recent_symptoms else 'Bình thường'}
+- Tên: {user_name} | Chặng: {intern_phase} | Stress: {stress_level}/5 | Ngủ: {sleep_info} | Triệu chứng: {', '.join(recent_symptoms) if recent_symptoms else 'Bình thường'}
 
 📚 CẨM NANG LIÊN QUAN (RAG CONTEXT):
 {context_str}
 """
 
-        # 4. Multi-Model Cascade Execution (Non-blocking with failover)
+        # 4. Multi-Model Cascade Execution: Ưu tiên GROQ siêu tốc (<1s), dự phòng GEMINI (Failover Cascade)
         ai_reply = ""
-        gemini_success = False
+        llm_success = False
 
-        if settings.GEMINI_API_KEY:
+        # --- TẦNG 1: Groq AI LPU (Tốc độ phản hồi cực nhanh ~0.5 - 1s) ---
+        if settings.GROQ_API_KEY:
+            for groq_model in GROQ_MODELS:
+                try:
+                    async with httpx.AsyncClient(timeout=4.0) as client:
+                        resp = await client.post(
+                            "https://api.groq.com/openai/v1/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "model": groq_model,
+                                "messages": [
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": query}
+                                ],
+                                "temperature": 0.6,
+                                "max_tokens": 600,
+                            }
+                        )
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            content = data["choices"][0]["message"]["content"]
+                            if content and content.strip():
+                                ai_reply = content.strip()
+                                llm_success = True
+                                logger.info(f"[Dual-LLM] Đã phản hồi thành công qua Groq ({groq_model})")
+                                break
+                except Exception as e:
+                    logger.warning(f"[Dual-LLM] Groq {groq_model} gặp lỗi ({e}), chuyển sang mô hình tiếp theo...")
+
+        # --- TẦNG 2: Google Gemini (Dự phòng khi Groq bị rate limit hoặc mất kết nối) ---
+        if not llm_success and settings.GEMINI_API_KEY:
             genai.configure(api_key=settings.GEMINI_API_KEY)
             prompt_text = f"{system_prompt}\n\nCÂU HỎI CỦA SINH VIÊN:\n{query}"
 
             for model_name in GEMINI_MODELS:
                 try:
                     model = genai.GenerativeModel(model_name)
-                    # Gọi bất đồng bộ trong thread pool với timeout bảo vệ 6 giây
                     response = await asyncio.wait_for(
                         asyncio.to_thread(model.generate_content, prompt_text),
-                        timeout=6.0
+                        timeout=5.0
                     )
                     if response and response.text and response.text.strip():
                         ai_reply = response.text.strip()
-                        gemini_success = True
+                        llm_success = True
+                        logger.info(f"[Dual-LLM] Đã phản hồi qua Gemini ({model_name})")
                         break
                 except Exception as e:
-                    logger.warning(f"[RAG Failover] Model {model_name} không khả dụng ({e}), chuyển sang model tiếp theo...")
+                    logger.warning(f"[Dual-LLM] Gemini {model_name} không khả dụng ({e}), thử model tiếp theo...")
 
-        # 5. Context-Aware Dynamic Fallback nếu không gọi được LLM
-        if not gemini_success:
+        # --- TẦNG 3: Context-Aware Dynamic Fallback nếu cả 2 LLM ngoại tuyến ---
+        if not llm_success:
             ai_reply = AdvancedRAGService._generate_dynamic_fallback(query, intent, rag_sources, user_name, risk_result)
 
         return {
@@ -197,6 +244,198 @@ Nhiệm vụ: Cảm ơn bạn {user_name}, gửi lời chúc bạn có một ca 
                 "trigger_emergency": risk_result.trigger_emergency,
                 "recommended_actions": risk_result.recommended_actions
             }
+        }
+
+    @staticmethod
+    async def generate_advanced_rag_response_stream(
+        query: str,
+        user_name: str = "Sinh viên",
+        intern_phase: str = "adaptation",
+        stress_level: int = 2,
+        sleep_hours: Optional[float] = None,
+        recent_symptoms: Optional[List[str]] = None,
+        top_k: int = 3,
+        user_id: Optional[str] = None,
+        db: Optional[Any] = None,
+    ):
+        """
+        Stream câu trả lời AI theo thời gian thực (Server-Sent Events / SSE).
+        Từng token được yield ngay lập tức khi mô hình sinh ra.
+        """
+        # 1. Phân loại ý định & Đánh giá rủi ro
+        intent = AdvancedRAGService.classify_intent(query)
+        risk_result = AIAgentService.evaluate_psychological_risk(
+            stress_level=stress_level,
+            sleep_hours=sleep_hours,
+            note_text=query,
+            physical_symptoms=recent_symptoms
+        )
+
+        rag_sources = []
+        context_texts = []
+        crag_status = "CORRECT"
+
+        if intent == "DOMAIN_QUERY":
+            expanded_queries = AdvancedRAGService.expand_query(query)
+            all_chunks = []
+            seen_chunk_texts = set()
+
+            for target in expanded_queries:
+                results = VectorStoreService.search_similar_chunks(target, top_k=top_k)
+                for res in results:
+                    chunk_text = res.get("chunk", "")
+                    if chunk_text and chunk_text not in seen_chunk_texts:
+                        seen_chunk_texts.add(chunk_text)
+                        all_chunks.append(res)
+
+            all_chunks.sort(key=lambda x: x.get("similarity", 0.0), reverse=True)
+            top_chunks = [c for c in all_chunks if c.get("similarity", 0.0) >= 0.40][:top_k]
+
+            for idx, item in enumerate(top_chunks, 1):
+                meta = item.get("metadata", {})
+                title = meta.get("title", "Cẩm nang thực tập")
+                category = meta.get("category", "general")
+                article_id = meta.get("article_id", "h0")
+                similarity = item.get("similarity", 0.0)
+
+                context_texts.append(f"[Nguồn {idx}: {title}]\nChủ đề: {category}\nNội dung: {item['chunk']}")
+                rag_sources.append({
+                    "article_id": article_id,
+                    "title": title,
+                    "category": category,
+                    "similarity_score": similarity
+                })
+
+        context_str = "\n\n".join(context_texts) if context_texts else "Không có trích dẫn cẩm nang cụ thể cho câu hỏi này."
+
+        if intent == "GREETING":
+            system_prompt = f"""Bạn là Enigma AI — Trợ lý Đồng hành Tâm lý & Sức khỏe Thực tập tại LG Display.
+Nhiệm vụ: Chào hỏi bạn {user_name} một cách ấm áp, thân thiện (dùng emoji sinh động), giới thiệu ngắn gọn khả năng hỗ trợ (giải đáp ca kíp, đau mỏi ca đứng, cẩm nang 5S, bài tập thư giãn) và hỏi thăm tình hình hôm nay của bạn ấy."""
+        elif intent == "CLOSING":
+            system_prompt = f"""Bạn là Enigma AI — Trợ lý Thực tập LG Display.
+Nhiệm vụ: Cảm ơn bạn {user_name}, gửi lời chúc bạn có một ca làm việc an toàn, nhiều năng lượng và nhắc bạn luôn có Enigma bên cạnh khi cần hỗ trợ."""
+        else:
+            sleep_info = f"{sleep_hours}h" if sleep_hours is not None else "Chưa có dữ liệu (chưa rõ)"
+            if sleep_hours is None:
+                sleep_instruction = f"5. DỮ LIỆU GIẤC NGỦ: Hiện tại hệ thống CHƯA CÓ dữ liệu giấc ngủ ca gần nhất của bạn {user_name} (chưa rõ). Tuyệt đối KHÔNG tự giả định bạn ấy đã ngủ đủ 7 tiếng. Nếu sinh viên nhắc đến mệt mỏi, uể oải, ca kíp hay sức khỏe, hãy ân cần hỏi thăm xem ca vừa rồi bạn ấy ngủ được khoảng mấy tiếng."
+            else:
+                sleep_instruction = f"5. DỮ LIỆU GIẤC NGỦ: Ca gần nhất bạn {user_name} ngủ {sleep_hours}h. Hãy cân nhắc thông tin này khi tư vấn sức khỏe và phục hồi năng lượng."
+
+            system_prompt = f"""Bạn là Enigma AI — Trợ lý Đồng hành Tâm lý, Sức khỏe & Thích nghi Thực tập Doanh nghiệp tại LG Display.
+
+🎯 NGUYÊN TẮC PHẢN HỒI:
+1. Thấu cảm & Trả lời TRỰC TIẾP, ĐÚNG TRỌNG TÂM câu hỏi của bạn {user_name}.
+2. Nếu có cẩm nang liên quan bên dưới, hãy trích dẫn rõ [Nguồn X: Tên bài viết] và ứng dụng vào câu trả lời.
+3. Đưa ra 2-3 lời khuyên hành động thực tế, khoa học và dễ làm theo.
+4. Xưng hô thân thiện "mình - bạn" hoặc "Enigma - {user_name}".
+{sleep_instruction}
+
+👤 THÔNG TIN SINH VIÊN:
+- Tên: {user_name} | Chặng: {intern_phase} | Stress: {stress_level}/5 | Ngủ: {sleep_info} | Triệu chứng: {', '.join(recent_symptoms) if recent_symptoms else 'Bình thường'}
+
+📚 CẨM NANG LIÊN QUAN (RAG CONTEXT):
+{context_str}
+"""
+
+        # Yield metadata đầu tiên: rag_sources & risk_assessment
+        yield {
+            "type": "metadata",
+            "rag_sources": rag_sources,
+            "crag_status": crag_status,
+            "risk_assessment": {
+                "level": risk_result.level,
+                "reasons": risk_result.reasons,
+                "trigger_emergency": risk_result.trigger_emergency,
+                "recommended_actions": risk_result.recommended_actions
+            }
+        }
+
+        full_text = ""
+        llm_stream_success = False
+
+        # --- TẦNG 1: Stream qua Groq AI LPU (Siêu tốc ~500 tokens/s) ---
+        if settings.GROQ_API_KEY:
+            for groq_model in GROQ_MODELS:
+                try:
+                    async with httpx.AsyncClient(timeout=15.0) as client:
+                        async with client.stream(
+                            "POST",
+                            "https://api.groq.com/openai/v1/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "model": groq_model,
+                                "messages": [
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": query}
+                                ],
+                                "temperature": 0.6,
+                                "max_tokens": 600,
+                                "stream": True
+                            }
+                        ) as response:
+                            if response.status_code == 200:
+                                import json as json_lib
+                                async for line in response.aiter_lines():
+                                    line_str = line.strip()
+                                    if line_str.startswith("data: ") and line_str != "data: [DONE]":
+                                        chunk_json = json_lib.loads(line_str[6:])
+                                        delta_text = chunk_json["choices"][0]["delta"].get("content", "")
+                                        if delta_text:
+                                            full_text += delta_text
+                                            yield {
+                                                "type": "chunk",
+                                                "delta": delta_text
+                                            }
+                                if full_text.strip():
+                                    llm_stream_success = True
+                                    logger.info(f"[Dual-LLM Stream] Stream hoàn tất từ Groq ({groq_model})")
+                                    break
+                except Exception as e:
+                    logger.warning(f"[Dual-LLM Stream] Groq {groq_model} stream lỗi ({e}), chuyển sang mô hình tiếp theo...")
+
+        # --- TẦNG 2: Stream dự phòng qua Google Gemini ---
+        if not llm_stream_success and settings.GEMINI_API_KEY:
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            prompt_text = f"{system_prompt}\n\nCÂU HỎI CỦA SINH VIÊN:\n{query}"
+
+            for model_name in GEMINI_MODELS:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    response = await asyncio.to_thread(model.generate_content, prompt_text, stream=True)
+                    for chunk in response:
+                        if chunk.text:
+                            full_text += chunk.text
+                            yield {
+                                "type": "chunk",
+                                "delta": chunk.text
+                            }
+                    if full_text.strip():
+                        llm_stream_success = True
+                        logger.info(f"[Dual-LLM Stream] Stream hoàn tất từ Gemini ({model_name})")
+                        break
+                except Exception as e:
+                    logger.warning(f"[Dual-LLM Stream] Gemini {model_name} không khả dụng ({e}), thử model tiếp theo...")
+
+        # --- TẦNG 3: Context-Aware Dynamic Fallback ---
+        if not llm_stream_success:
+            fallback = AdvancedRAGService._generate_dynamic_fallback(query, intent, rag_sources, user_name, risk_result)
+            full_text = fallback
+            words = fallback.split(" ")
+            chunk_size = 3
+            for i in range(0, len(words), chunk_size):
+                sub = " ".join(words[i:i+chunk_size]) + " "
+                yield {
+                    "type": "chunk",
+                    "delta": sub
+                }
+                await asyncio.sleep(0.03)
+
+        yield {
+            "type": "done",
+            "full_content": full_text.strip()
         }
 
     @staticmethod

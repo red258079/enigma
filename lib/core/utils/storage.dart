@@ -125,4 +125,20 @@ class StorageUtil {
   static Future<void> clearCachedUser() async {
     await _prefs.remove(_cachedUserKey);
   }
+
+  // ── Sleep Reminder Preferences ───────────────────────────────────────────
+  static bool get isSleepReminderEnabled => _prefs.getBool('reminder_sleep_enabled') ?? false;
+  static Future<void> setSleepReminderEnabled(bool value) async =>
+      await _prefs.setBool('reminder_sleep_enabled', value);
+
+  static int get sleepReminderHour => _prefs.getInt('reminder_sleep_hour') ?? 8;
+  static int get sleepReminderMinute => _prefs.getInt('reminder_sleep_minute') ?? 30;
+  static Future<void> setSleepReminderTime(int hour, int minute) async {
+    await _prefs.setInt('reminder_sleep_hour', hour);
+    await _prefs.setInt('reminder_sleep_minute', minute);
+  }
+
+  static bool get isNoonReminderEnabled => _prefs.getBool('reminder_noon_enabled') ?? false;
+  static Future<void> setNoonReminderEnabled(bool value) async =>
+      await _prefs.setBool('reminder_noon_enabled', value);
 }

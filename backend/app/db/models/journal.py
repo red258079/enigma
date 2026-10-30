@@ -15,6 +15,7 @@ class Journal(Base):
     journal_date      = Column(Date, nullable=False)
     stress_level      = Column(SmallInteger, nullable=False)
     sleep_hours       = Column(Numeric(3, 1), nullable=False)
+    shift_type        = Column(Text, nullable=True)
     physical_symptoms = Column(ARRAY(Text), server_default="{}")
     note              = Column(Text, nullable=True)
     ai_sentiment      = Column(String(20), nullable=True)

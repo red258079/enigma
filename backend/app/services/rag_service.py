@@ -18,7 +18,7 @@ class RAGService:
         user_name: str = "Sinh viên",
         intern_phase: str = "adaptation",
         stress_level: int = 2,
-        sleep_hours: float = 7.0,
+        sleep_hours: Optional[float] = None,
         recent_symptoms: Optional[List[str]] = None,
         top_k: int = 3
     ) -> Dict[str, Any]:
@@ -62,6 +62,12 @@ class RAGService:
         context_str = "\n\n".join(context_texts) if context_texts else "Không tìm thấy nội dung cẩm nang khớp chính xác."
 
         # Step 3: Construct System Prompt
+        sleep_info = f"{sleep_hours}h" if sleep_hours is not None else "Chưa có dữ liệu (chưa rõ)"
+        if sleep_hours is None:
+            sleep_rule = f"5. DỮ LIỆU GIẤC NGỦ: Hiện tại hệ thống CHƯA CÓ dữ liệu giấc ngủ ca gần nhất của bạn {user_name} (chưa rõ). Tuyệt đối KHÔNG tự giả định bạn ấy đã ngủ đủ 7 tiếng. Nếu sinh viên nhắc đến mệt mỏi, uể oải, ca kíp hoặc sức khỏe, hãy ân cần hỏi thăm bạn ấy ca vừa rồi ngủ được khoảng mấy tiếng."
+        else:
+            sleep_rule = f"5. DỮ LIỆU GIẤC NGỦ: Ca gần nhất bạn {user_name} ngủ khoảng {sleep_hours}h. Hãy cân nhắc thông tin này khi đưa ra lời khuyên phục hồi thể lực."
+
         system_prompt = f"""Bạn là Enigma AI - Trợ lý Chăm sóc Tâm lý & Thích nghi Thực tập cho sinh viên tại LG Display.
 Nhiệm vụ: Trả lời câu hỏi của sinh viên dựa trên thông tin Cẩm nang thực tập và tình trạng sức khỏe thực tế.
 
@@ -69,7 +75,7 @@ Nhiệm vụ: Trả lời câu hỏi của sinh viên dựa trên thông tin C�
 - Tên sinh viên: {user_name}
 - Giai đoạn thực tập: {intern_phase} (preparation: Chuẩn bị / adaptation: Thích nghi / sustain: Duy trì)
 - Mức độ stress hiện tại: {stress_level}/5
-- Số giờ ngủ ca gần nhất: {sleep_hours}h
+- Số giờ ngủ ca gần nhất: {sleep_info}
 - Triệu chứng thể chất: {', '.join(recent_symptoms) if recent_symptoms else 'Không có'}
 - Mức độ rủi ro tâm lý AI Agent đánh giá: {risk_result.level}
 
@@ -81,6 +87,7 @@ Nhiệm vụ: Trả lời câu hỏi của sinh viên dựa trên thông tin C�
 2. Nếu câu hỏi liên quan tới Cẩm nang, hãy trích dẫn cụ thể theo dạng [Nguồn X].
 3. Nếu sinh viên đang có stress cao hoặc thiếu ngủ, đưa ra 1-2 lời khuyên hành động ngay (như hít thở Box Breathing 4-4-4-4 hoặc ngâm chân nước ấm).
 4. Nếu rủi ro ở mức RED (Nguy cơ cao), đưa ra lời khuyên bình tĩnh và nhắc nhở sinh viên liên hệ ngay Hotline 111 hoặc Y tế trường.
+{sleep_rule}
 """
 
         # Step 4: Call Gemini API or fallback

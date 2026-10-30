@@ -5,6 +5,7 @@ import '../state/auth_state.dart';
 import '../theme/app_theme.dart';
 import '../core/services/biometric_service.dart';
 import '../core/services/push_notification_service.dart';
+import '../core/services/reminder_service.dart';
 import '../core/utils/storage.dart';
 import 'student/profile_screen.dart';
 import 'auth/login_screen.dart';
@@ -189,6 +190,8 @@ class SettingsScreen extends StatelessWidget {
           // ── Notifications ────────────────────────────────────────────────────
           _SectionHeader(title: 'Thông báo', icon: Icons.notifications_rounded, color: AppTheme.accentCoral),
           const SizedBox(height: 12),
+          const _SleepReminderSettingTile(),
+          const SizedBox(height: 10),
           _SettingsTile(
             context: context,
             icon: Icons.notifications_active_rounded,
@@ -728,6 +731,170 @@ class _BiometricSettingTileState extends State<_BiometricSettingTile> {
             : (_) => _showSetupGuide(),
       ),
       onTap: _isAvailable ? () => _onToggle(!_isEnabled) : _showSetupGuide,
+    );
+  }
+}
+
+class _SleepReminderSettingTile extends StatefulWidget {
+  const _SleepReminderSettingTile();
+
+  @override
+  State<_SleepReminderSettingTile> createState() => _SleepReminderSettingTileState();
+}
+
+class _SleepReminderSettingTileState extends State<_SleepReminderSettingTile> {
+  late bool _enabled;
+  late int _hour;
+  late int _minute;
+  late bool _noonEnabled;
+
+  @override
+  void initState() {
+    super.initState();
+    _enabled = StorageUtil.isSleepReminderEnabled;
+    _hour = StorageUtil.sleepReminderHour;
+    _minute = StorageUtil.sleepReminderMinute;
+    _noonEnabled = StorageUtil.isNoonReminderEnabled;
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: _hour, minute: _minute),
+      helpText: 'Chọn giờ nhắc nhở giấc ngủ',
+      confirmText: 'Lưu',
+      cancelText: 'Hủy',
+    );
+    if (picked != null) {
+      await StorageUtil.setSleepReminderTime(picked.hour, picked.minute);
+      setState(() {
+        _hour = picked.hour;
+        _minute = picked.minute;
+      });
+      await ReminderService.rescheduleAll();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final timeStr = '${_hour.toString().padLeft(2, '0')}:${_minute.toString().padLeft(2, '0')}';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: AppTheme.cardDecorationFor(context, borderRadius: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.sleepColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.bedtime_outlined, color: AppTheme.sleepColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Nhắc nhở ghi nhận giấc ngủ', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    const SizedBox(height: 2),
+                    Text(
+                      _enabled ? 'Mỗi ngày lúc $timeStr (chỉ mất 1 chạm)' : 'Đang tắt nhắc nhở',
+                      style: TextStyle(fontSize: 12, color: AppTheme.onSurfaceMuted(context)),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _enabled,
+                activeColor: AppTheme.sleepColor,
+                onChanged: (val) async {
+                  if (val) {
+                    final messenger = ScaffoldMessenger.of(context);
+                    final granted = await ReminderService.requestPermission(context: context);
+                    if (!granted) {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Vui lòng cấp quyền thông báo trong cài đặt máy để nhận nhắc nhở.'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                      await StorageUtil.setSleepReminderEnabled(false);
+                      await ReminderService.cancelAll();
+                      if (mounted) setState(() => _enabled = false);
+                      return;
+                    }
+                    await StorageUtil.setSleepReminderEnabled(true);
+                    await ReminderService.rescheduleAll();
+                    if (mounted) setState(() => _enabled = true);
+                  } else {
+                    await StorageUtil.setSleepReminderEnabled(false);
+                    await ReminderService.cancelAll();
+                    if (mounted) setState(() => _enabled = false);
+                  }
+                },
+              ),
+            ],
+          ),
+          if (_enabled) ...[
+            const Divider(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Giờ nhắc sáng:', style: TextStyle(fontSize: 13, color: AppTheme.onSurfaceSecondary(context))),
+                InkWell(
+                  onTap: _pickTime,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: AppTheme.sleepColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.sleepColor.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.sleepColor),
+                        const SizedBox(width: 6),
+                        Text(timeStr, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.sleepColor)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Nhắc thêm lúc 12:00', style: TextStyle(fontSize: 13, color: AppTheme.onSurfaceSecondary(context))),
+                      Text('Chỉ gửi nếu sáng nay chưa ghi nhận', style: TextStyle(fontSize: 11, color: AppTheme.onSurfaceMuted(context))),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: _noonEnabled,
+                  activeColor: AppTheme.sleepColor,
+                  onChanged: (val) async {
+                    await StorageUtil.setNoonReminderEnabled(val);
+                    setState(() => _noonEnabled = val);
+                    await ReminderService.rescheduleAll();
+                  },
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

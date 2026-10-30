@@ -77,3 +77,10 @@ chroma_db/
 backend/chroma_db/
 analyze_output*.txt
 *.bak
+
+# AI Assistants and IDE tooling
+.cursor/
+.codex/
+.gemini/
+.claude/
+

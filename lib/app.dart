@@ -8,6 +8,7 @@ import 'state/notification_state.dart';
 import 'screens/auth/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/student/notifications_screen.dart';
+import 'screens/student/life_log_screen.dart';
 
 class EnigmaApp extends StatelessWidget {
   final GlobalKey<NavigatorState>? navigatorKey;
@@ -40,6 +41,7 @@ class EnigmaApp extends StatelessWidget {
             routes: {
               '/login': (_) => const LoginScreen(),
               '/notifications': (_) => const NotificationsScreen(),
+              '/life-log': (_) => const LifeLogScreen(),
             },
           );
         },

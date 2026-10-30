@@ -1,7 +1,15 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme/app_theme.dart';
 import '../../core/api/life_log_repository.dart';
+import '../../core/utils/sleep_time_utils.dart';
+import '../../core/utils/sleep_detector.dart';
+import '../../core/services/sleep_sensor_service.dart';
+import '../../core/services/workplace_service.dart';
+import '../../core/services/reminder_service.dart';
+import '../../core/utils/storage.dart';
 
 /// Màn hình Ghi Nhật Ký Sinh Hoạt — giờ ngủ, mức stress, triệu chứng
 class LifeLogScreen extends StatefulWidget {
@@ -11,7 +19,8 @@ class LifeLogScreen extends StatefulWidget {
   State<LifeLogScreen> createState() => _LifeLogScreenState();
 }
 
-class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateMixin {
+class _LifeLogScreenState extends State<LifeLogScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   // Form values
   int _stressLevel = 2;
   double _sleepHours = 7.0;
@@ -19,6 +28,26 @@ class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateM
   final List<String> _selectedSymptoms = [];
   final _noteController = TextEditingController();
   int? _waterIntakeMl;
+
+  // Suggested bedtime & wake time based on shift / auto-sensor
+  TimeOfDay _suggestedBedtime = const TimeOfDay(hour: 23, minute: 0);
+  TimeOfDay _suggestedWakeTime = const TimeOfDay(hour: 6, minute: 30);
+  bool _hasUserEditedTimes = false;
+  bool _hasUserEditedSlider = false;
+  bool _hasUserPickedShift = false;
+  bool _shiftWasAutoInferred = false;
+
+  // Sleep sensor & detection states
+  bool _isUsagePermissionGranted = false;
+  bool _isLoadingSleepData = false;
+  ScreenGap? _detectedSleepGap;
+  bool _isChargingNow = false;
+  bool _isAtDormNow = false;
+  bool _isHighConfidence = false;
+  List<String> _confidenceReasons = [];
+  List<ScreenEvent> _debugScreenEvents = [];
+  bool _debugTestMode = false;
+  ScreenGap? _debugTestModeGap;
 
   // States
   bool _isLoading = false;
@@ -56,15 +85,26 @@ class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateM
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 2, vsync: this);
     _loadHistory();
+    _loadSleepSensorData();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     _noteController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Re-evaluate sleep data and permissions when user returns to app
+      _loadSleepSensorData();
+    }
   }
 
   Future<void> _loadHistory() async {
@@ -95,8 +135,13 @@ class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateM
           _isLoading = false;
           _isSaved = true;
           _savedResult = result;
+          _hasUserEditedTimes = false;
+          _hasUserEditedSlider = false;
+          _hasUserPickedShift = false;
+          _shiftWasAutoInferred = false;
         });
         _loadHistory(); // Refresh history
+        ReminderService.onLifeLogSaved();
       }
     } catch (e) {
       if (mounted) {
@@ -145,7 +190,11 @@ class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateM
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionHeader('💤 Số giờ ngủ ca vừa rồi', '${_sleepHours.toStringAsFixed(1)}h'),
+          _buildSleepSuggestionCard(),
+          if (kDebugMode) _buildSleepDebugPanel(),
+          const SizedBox(height: 20),
+
+          _buildSectionHeader('💤 Số giờ ngủ ca vừa rồi', formatHoursMinutes(_sleepHours)),
           const SizedBox(height: 12),
           _buildSleepSlider(),
 
@@ -157,7 +206,14 @@ class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateM
 
           const SizedBox(height: 24),
 
-          _buildSectionHeader('🏭 Loại ca làm việc', _shiftType == 'day' ? 'Ca ngày ☀️' : _shiftType == 'night' ? 'Ca đêm 🌙' : 'Chưa chọn'),
+          _buildSectionHeader(
+            '🏭 Loại ca làm việc',
+            _shiftType == 'day'
+                ? (_shiftWasAutoInferred ? 'Ca ngày ☀️ (tự đoán)' : 'Ca ngày ☀️')
+                : _shiftType == 'night'
+                    ? (_shiftWasAutoInferred ? 'Ca đêm 🌙 (tự đoán)' : 'Ca đêm 🌙')
+                    : 'Chưa chọn',
+          ),
           const SizedBox(height: 12),
           _buildShiftSelector(),
 
@@ -179,7 +235,10 @@ class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateM
           const SizedBox(height: 12),
           _buildNoteField(),
 
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
+          _buildReminderCard(),
+
+          const SizedBox(height: 24),
           _buildSaveButton(),
           const SizedBox(height: 20),
         ],
@@ -221,11 +280,14 @@ class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateM
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
             ),
             child: Slider(
-              value: _sleepHours,
+              value: _sleepHours.clamp(0.0, 14.0),
               min: 0,
-              max: 12,
-              divisions: 24,
-              onChanged: (v) => setState(() => _sleepHours = v),
+              max: 14,
+              divisions: 56,
+              onChanged: (v) => setState(() {
+                _hasUserEditedSlider = true;
+                _sleepHours = double.parse(v.toStringAsFixed(2));
+              }),
             ),
           ),
           Row(
@@ -233,7 +295,7 @@ class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateM
             children: [
               Text('0h', style: TextStyle(fontSize: 11, color: AppTheme.onSurfaceMuted(context))),
               Text(_sleepQualityLabel(_sleepHours), style: TextStyle(fontSize: 12, color: _sleepColor(_sleepHours), fontWeight: FontWeight.w600)),
-              Text('12h', style: TextStyle(fontSize: 11, color: AppTheme.onSurfaceMuted(context))),
+              Text('14h', style: TextStyle(fontSize: 11, color: AppTheme.onSurfaceMuted(context))),
             ],
           ),
         ],
@@ -272,11 +334,41 @@ class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateM
   }
 
   Widget _buildShiftSelector() {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: _buildShiftChip('day', '☀️ Ca ngày', AppTheme.accentAmber)),
-        const SizedBox(width: 12),
-        Expanded(child: _buildShiftChip('night', '🌙 Ca đêm', AppTheme.sleepColor)),
+        Row(
+          children: [
+            Expanded(child: _buildShiftChip('day', '☀️ Ca ngày', AppTheme.accentAmber)),
+            const SizedBox(width: 12),
+            Expanded(child: _buildShiftChip('night', '🌙 Ca đêm', AppTheme.sleepColor)),
+          ],
+        ),
+        if (_shiftWasAutoInferred && _shiftType != null) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 13,
+                  color: _shiftType == 'day' ? AppTheme.accentAmber : AppTheme.sleepColor,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'ca được đoán tự động',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: _shiftType == 'day' ? AppTheme.accentAmber : AppTheme.sleepColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -284,17 +376,900 @@ class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateM
   Widget _buildShiftChip(String type, String label, Color color) {
     final isSelected = _shiftType == type;
     return GestureDetector(
-      onTap: () => setState(() => _shiftType = isSelected ? null : type),
+      onTap: () => _onShiftChanged(isSelected ? null : type),
       child: AnimatedContainer(
         duration: 200.ms,
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         decoration: BoxDecoration(
           color: isSelected ? color.withOpacity(0.15) : AppTheme.surfaceColor(context),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: isSelected ? color : AppTheme.borderColor(context), width: isSelected ? 2 : 1),
         ),
-        child: Text(label, textAlign: TextAlign.center,
-          style: TextStyle(fontWeight: FontWeight.w600, color: isSelected ? color : AppTheme.onSurfaceSecondary(context), fontSize: 14)),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: isSelected ? color : AppTheme.onSurfaceSecondary(context),
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Sleep Sensor Data & Suggestion Card Helpers ─────────────────────────────
+
+  Future<void> _loadSleepSensorData() async {
+    if (!mounted) return;
+    setState(() => _isLoadingSleepData = true);
+
+    try {
+      // 1. Check UsageStats permission
+      final hasPermission =
+          await SleepSensorService.instance.isUsagePermissionGranted();
+      _isUsagePermissionGranted = hasPermission;
+
+      // 2. Read soft signals: Charging and atDorm (foreground once)
+      final chargingData =
+          await SleepSensorService.instance.getChargingState();
+      final isCharging = chargingData['isCharging'] as bool? ?? false;
+      _isChargingNow = isCharging;
+
+      // GPS soft signal: evaluate current location once without prompting new permission
+      bool isAtDorm = false;
+      try {
+        await WorkplaceService.instance
+            .evaluateCurrentLocation(promptPermission: false);
+        isAtDorm = WorkplaceService.instance.status == WorkplaceStatus.atDorm;
+      } catch (_) {}
+      _isAtDormNow = isAtDorm;
+
+      if (!hasPermission) {
+        // Fall back to shift defaults
+        final defaults = SleepTimeUtils.defaultTimesForShift(_shiftType);
+        _suggestedBedtime = defaults.bedtime;
+        _suggestedWakeTime = defaults.wakeTime;
+        _detectedSleepGap = null;
+        _debugScreenEvents = [];
+        _isHighConfidence = false;
+        _confidenceReasons = [];
+        if (mounted) setState(() => _isLoadingSleepData = false);
+        return;
+      }
+
+      // 3. Query last 24h screen events
+      final events =
+          await SleepSensorService.instance.getScreenEvents(hours: 24);
+      _debugScreenEvents = events;
+
+      // 4. Detect the sleep gap with wide window (shiftType null) first
+      final gap = SleepDetector.findLongestSleepGap(
+        events,
+        shiftType: _hasUserPickedShift ? _shiftType : null,
+      );
+      _detectedSleepGap = gap;
+      if (_debugTestMode) {
+        _debugTestModeGap = SleepDetector.findLongestSleepGap(
+          events,
+          minSleepDuration: const Duration(minutes: 5),
+          maxSleepDuration: null,
+          ignoreSleepWindow: true,
+        );
+      }
+
+      if (gap != null) {
+        // Auto-select _shiftType if user hasn't manually picked a shift chip
+        if (!_hasUserPickedShift) {
+          final inferred = SleepDetector.inferShiftTypeFromGapStart(gap.start);
+          if (inferred != null) {
+            _shiftType = inferred;
+            _shiftWasAutoInferred = true;
+          }
+        }
+
+        // Feed into suggested bedtime / wake time (unless user edited them with pickers)
+        if (!_hasUserEditedTimes) {
+          final localStart = gap.start.toLocal();
+          final localEnd = gap.end.toLocal();
+          _suggestedBedtime =
+              TimeOfDay(hour: localStart.hour, minute: localStart.minute);
+          _suggestedWakeTime =
+              TimeOfDay(hour: localEnd.hour, minute: localEnd.minute);
+        }
+
+        // Automatically set _sleepHours to gap duration if user hasn't edited slider or pickers
+        if (!_hasUserEditedTimes && !_hasUserEditedSlider) {
+          _sleepHours = gap.durationHours.clamp(0.0, 14.0);
+        }
+
+        // Confidence calculation: show "Độ tin cậy cao" only when at least 2 signals agree
+        final reasons = <String>[];
+        if (isCharging) {
+          reasons.add('Đang cắm sạc pin');
+        }
+        if (isAtDorm) {
+          reasons.add('Tại phòng trọ / KTX');
+        }
+
+        _isHighConfidence = reasons.length >= 2;
+        _confidenceReasons = reasons;
+      } else {
+        // Fall back to shift defaults when no gap found
+        if (!_hasUserEditedTimes) {
+          final defaults = SleepTimeUtils.defaultTimesForShift(_shiftType);
+          _suggestedBedtime = defaults.bedtime;
+          _suggestedWakeTime = defaults.wakeTime;
+        }
+        _isHighConfidence = false;
+        _confidenceReasons = [];
+      }
+    } catch (e) {
+      debugPrint('[LifeLogScreen] Lỗi tải dữ liệu cảm biến giấc ngủ: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingSleepData = false);
+      }
+    }
+  }
+
+  Future<void> _requestUsagePermission() async {
+    await SleepSensorService.instance.requestUsagePermission();
+  }
+
+  void _onToggleDebugTestMode(bool val) {
+    setState(() {
+      _debugTestMode = val;
+      if (val) {
+        _debugTestModeGap = SleepDetector.findLongestSleepGap(
+          _debugScreenEvents,
+          minSleepDuration: const Duration(minutes: 5),
+          maxSleepDuration: null,
+          ignoreSleepWindow: true,
+        );
+      } else {
+        _debugTestModeGap = null;
+      }
+    });
+  }
+
+  Future<void> _copyDebugEventsToClipboard() async {
+    if (_debugScreenEvents.isEmpty) return;
+    final text = _debugScreenEvents
+        .map((e) => '${_formatDateTime(e.timestamp)} ${e.type.name}')
+        .join('\n');
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã copy events vào clipboard'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  void _onShiftChanged(String? newShift) {
+    setState(() {
+      _hasUserPickedShift = true;
+      _shiftWasAutoInferred = false;
+      _shiftType = newShift;
+      // Re-evaluate sleep gap for new shift if we have events
+      ScreenGap? newGap;
+      if (_debugScreenEvents.isNotEmpty) {
+        newGap = SleepDetector.findLongestSleepGap(
+          _debugScreenEvents,
+          shiftType: newShift,
+        );
+        if (_debugTestMode) {
+          _debugTestModeGap = SleepDetector.findLongestSleepGap(
+            _debugScreenEvents,
+            minSleepDuration: const Duration(minutes: 5),
+            maxSleepDuration: null,
+            ignoreSleepWindow: true,
+          );
+        }
+      }
+      _detectedSleepGap = newGap;
+      if (newGap == null) {
+        _isHighConfidence = false;
+        _confidenceReasons = [];
+      }
+      if (!_hasUserEditedTimes) {
+        if (newGap != null) {
+          final start = newGap.start.toLocal();
+          final end = newGap.end.toLocal();
+          _suggestedBedtime = TimeOfDay(hour: start.hour, minute: start.minute);
+          _suggestedWakeTime = TimeOfDay(hour: end.hour, minute: end.minute);
+        } else {
+          final defaults = SleepTimeUtils.defaultTimesForShift(newShift);
+          _suggestedBedtime = defaults.bedtime;
+          _suggestedWakeTime = defaults.wakeTime;
+        }
+      }
+      if (!_hasUserEditedTimes && !_hasUserEditedSlider && newGap != null) {
+        _sleepHours = newGap.durationHours.clamp(0.0, 14.0);
+      }
+    });
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final local = dt.toLocal();
+    final h = local.hour.toString().padLeft(2, '0');
+    final m = local.minute.toString().padLeft(2, '0');
+    final s = local.second.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    final mo = local.month.toString().padLeft(2, '0');
+    return '$h:$m:$s $d/$mo';
+  }
+
+  Future<void> _pickBedtime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _suggestedBedtime,
+      helpText: 'Chọn giờ đi ngủ',
+      cancelText: 'Hủy',
+      confirmText: 'Chọn',
+    );
+    if (picked != null && picked != _suggestedBedtime) {
+      setState(() {
+        _suggestedBedtime = picked;
+        _hasUserEditedTimes = true;
+      });
+    }
+  }
+
+  Future<void> _pickWakeTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _suggestedWakeTime,
+      helpText: 'Chọn giờ thức dậy',
+      cancelText: 'Hủy',
+      confirmText: 'Chọn',
+    );
+    if (picked != null && picked != _suggestedWakeTime) {
+      setState(() {
+        _suggestedWakeTime = picked;
+        _hasUserEditedTimes = true;
+      });
+    }
+  }
+
+  Widget _buildReminderCard() {
+    final enabled = StorageUtil.isSleepReminderEnabled;
+    final hour = StorageUtil.sleepReminderHour;
+    final minute = StorageUtil.sleepReminderMinute;
+    final timeStr = '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceColor(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.borderColor(context)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.alarm_on_rounded,
+            size: 20,
+            color: enabled ? AppTheme.sleepColor : AppTheme.onSurfaceMuted(context),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Nhắc nhở ghi nhận giấc ngủ',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  enabled ? 'Mỗi ngày lúc $timeStr (1 chạm)' : 'Đang tắt nhắc nhở',
+                  style: TextStyle(fontSize: 11, color: AppTheme.onSurfaceMuted(context)),
+                ),
+              ],
+            ),
+          ),
+          if (enabled) ...[
+            InkWell(
+              onTap: () async {
+                final picked = await showTimePicker(
+                  context: context,
+                  initialTime: TimeOfDay(hour: hour, minute: minute),
+                  helpText: 'Chọn giờ nhắc nhở giấc ngủ',
+                  confirmText: 'Lưu',
+                  cancelText: 'Hủy',
+                );
+                if (picked != null) {
+                  await StorageUtil.setSleepReminderTime(picked.hour, picked.minute);
+                  setState(() {});
+                  await ReminderService.rescheduleAll();
+                }
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.sleepColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  timeStr,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.sleepColor,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Switch(
+            value: enabled,
+            activeColor: AppTheme.sleepColor,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            onChanged: (val) async {
+              if (val) {
+                final messenger = ScaffoldMessenger.of(context);
+                final granted = await ReminderService.requestPermission(context: context);
+                if (!granted) {
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Vui lòng cấp quyền thông báo trong cài đặt máy.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  await StorageUtil.setSleepReminderEnabled(false);
+                  await ReminderService.cancelAll();
+                  if (mounted) setState(() {});
+                  return;
+                }
+                await StorageUtil.setSleepReminderEnabled(true);
+                await ReminderService.rescheduleAll();
+                if (mounted) setState(() {});
+              } else {
+                await StorageUtil.setSleepReminderEnabled(false);
+                await ReminderService.cancelAll();
+                if (mounted) setState(() {});
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSleepSuggestionCard() {
+    final computedHours = calculateSleepDuration(_suggestedBedtime, _suggestedWakeTime);
+    final durationFormatted = formatHoursMinutes(computedHours);
+    final isNightShift = _shiftType == 'night';
+    final hasAutoData = _detectedSleepGap != null;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF131D2E)
+            : const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppTheme.sleepColor.withOpacity(0.35),
+          width: 1.2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.sleepColor.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  hasAutoData ? Icons.auto_awesome_rounded : Icons.bedtime_outlined,
+                  size: 20,
+                  color: AppTheme.sleepColor,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        Text(
+                          hasAutoData
+                              ? 'Gợi ý giấc ngủ (tự động)'
+                              : 'Gợi ý giấc ngủ theo ca',
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        if (_detectedSleepGap != null && _isHighConfidence)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accentMint.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                  color: AppTheme.accentMint.withOpacity(0.5)),
+                            ),
+                            child: const Text(
+                              'Độ tin cậy cao ✨',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF10B981),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      hasAutoData
+                          ? (_confidenceReasons.isNotEmpty
+                              ? 'Tự động nhận diện (${_confidenceReasons.join(", ")})'
+                              : 'Nhận diện từ thời gian tắt màn hình đêm qua')
+                          : (isNightShift
+                              ? 'Ca đêm (ngủ ban ngày)'
+                              : 'Ca ngày / thông thường (ngủ ban đêm)'),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.onSurfaceMuted(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_isLoadingSleepData)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppTheme.sleepColor,
+                  ),
+                ),
+            ],
+          ),
+
+          // Permission banner if Usage Access is not granted (Android only)
+          if (!kIsWeb &&
+              defaultTargetPlatform == TargetPlatform.android &&
+              !_isUsagePermissionGranted) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.amber.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.amber.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded,
+                      size: 16, color: Colors.amber),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Bật quyền sử dụng để tự động phát hiện giờ ngủ',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.onSurface(context),
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: _requestUsagePermission,
+                    borderRadius: BorderRadius.circular(6),
+                    child: const Padding(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      child: Text(
+                        'Cấp quyền',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.amber,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 14),
+
+          // Suggestion text worded as suggestion (not fact)
+          Text(
+            'Gợi ý: bạn ngủ khoảng $durationFormatted',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.onSurface(context),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            hasAutoData
+                ? 'Dựa vào thời gian tắt màn hình đêm qua. Bạn có thể bấm vào giờ để sửa hoặc bấm Áp dụng để điền vào thanh trượt.'
+                : 'Dựa vào khung giờ dự kiến. Bạn có thể bấm vào giờ để sửa hoặc bấm Áp dụng để điền vào thanh trượt.',
+            style: TextStyle(
+              fontSize: 12,
+              color: AppTheme.onSurfaceMuted(context),
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Time pickers row
+          Row(
+            children: [
+              Expanded(
+                child: _buildTimePickerTile(
+                  label: 'Giờ đi ngủ',
+                  time: _suggestedBedtime,
+                  icon: isNightShift ? Icons.wb_sunny_outlined : Icons.nightlight_outlined,
+                  onTap: _pickBedtime,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 18,
+                  color: AppTheme.onSurfaceMuted(context),
+                ),
+              ),
+              Expanded(
+                child: _buildTimePickerTile(
+                  label: 'Giờ thức dậy',
+                  time: _suggestedWakeTime,
+                  icon: isNightShift ? Icons.bedtime_outlined : Icons.wb_sunny_outlined,
+                  onTap: _pickWakeTime,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // 1-tap confirm button to fill _sleepHours in the form
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                final appliedHours = computedHours.clamp(0.0, 14.0);
+                setState(() {
+                  _hasUserEditedSlider = true;
+                  _sleepHours = appliedHours;
+                });
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      computedHours > 14.0
+                          ? 'Đã đặt mức tối đa thanh trượt: ${formatHoursMinutes(appliedHours)} ngủ (tính ra $durationFormatted)'
+                          : 'Đã cập nhật thanh trượt: ${formatHoursMinutes(appliedHours)} ngủ',
+                    ),
+                    duration: const Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              icon: const Icon(Icons.check_circle_outline_rounded, size: 18, color: AppTheme.sleepColor),
+              label: Text(
+                computedHours > 14.0
+                    ? 'Áp dụng ${formatHoursMinutes(computedHours.clamp(0.0, 14.0))} (tối đa) vào nhật ký'
+                    : 'Áp dụng $durationFormatted vào nhật ký',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: AppTheme.sleepColor,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppTheme.sleepColor.withOpacity(0.5)),
+                backgroundColor: AppTheme.sleepColor.withOpacity(0.08),
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Temporary Debug-Only Panel (kDebugMode) ──────────────────────────────────
+
+  Widget _buildSleepDebugPanel() {
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF1E1E1E)
+            : const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.amber.withOpacity(0.5), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.bug_report_outlined, size: 18, color: Colors.amber),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'DEBUG: so với Digital Wellbeing',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    color: Colors.amber,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 18),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                tooltip: 'Tải lại sự kiện',
+                onPressed: _loadSleepSensorData,
+              ),
+            ],
+          ),
+          const Divider(height: 16),
+          Text(
+            '• UsageStats Permission: ${_isUsagePermissionGranted ? "GRANTED ✅" : "DENIED ❌"}',
+            style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+          ),
+          Text(
+            '• Đang sạc pin (lúc mở): ${_isChargingNow ? "CÓ ⚡" : "KHÔNG"}',
+            style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+          ),
+          Text(
+            '• Ở phòng trọ (GPS atDorm): ${_isAtDormNow ? "ĐÚNG 🏠" : "KHÔNG"}',
+            style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+          ),
+          Text(
+            '• Detected Sleep Gap: ${_detectedSleepGap != null ? "${_formatDateTime(_detectedSleepGap!.start)} -> ${_formatDateTime(_detectedSleepGap!.end)} (${formatHoursMinutes(_detectedSleepGap!.durationHours)})" : "None"}',
+            style: const TextStyle(
+                fontSize: 11,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w700),
+          ),
+          Text(
+            '• Độ tin cậy cao: ${_isHighConfidence ? "CÓ (${_confidenceReasons.join(", ")})" : "Bình thường"}',
+            style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '• Test mode (min 5p, no window/cap):',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.w600,
+                    color: _debugTestMode ? Colors.amber : null,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 24,
+                child: Switch(
+                  value: _debugTestMode,
+                  activeColor: Colors.amber,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: _onToggleDebugTestMode,
+                ),
+              ),
+            ],
+          ),
+          if (_debugTestMode) ...[
+            const SizedBox(height: 4),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.amber.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.amber.withOpacity(0.35)),
+              ),
+              child: Text(
+                '⚡ Test Mode Gap: ${_debugTestModeGap != null ? "${_formatDateTime(_debugTestModeGap!.start)} -> ${_formatDateTime(_debugTestModeGap!.end)} (${formatHoursMinutes(_debugTestModeGap!.durationHours)})" : "None"}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w700,
+                  color: Colors.amber,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '• Raw Events (${_debugScreenEvents.length}):',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (_debugScreenEvents.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: _copyDebugEventsToClipboard,
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.amber.withOpacity(0.35)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.copy_rounded, size: 11, color: Colors.amber),
+                        SizedBox(width: 4),
+                        Text(
+                          'Copy events',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.amber,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          Container(
+            constraints: const BoxConstraints(maxHeight: 160),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.borderColor(context)),
+            ),
+            child: _debugScreenEvents.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(10.0),
+                    child: Text(
+                      'Chưa có sự kiện nào (hãy bấm "Cấp quyền" để đọc UsageStats)',
+                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _debugScreenEvents.length,
+                    itemBuilder: (ctx, i) {
+                      final e = _debugScreenEvents[i];
+                      final isOff = e.isScreenOff;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isOff
+                                  ? Icons.phone_android
+                                  : Icons.screen_lock_portrait,
+                              size: 13,
+                              color: isOff ? Colors.blueGrey : Colors.green,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _formatDateTime(e.timestamp),
+                              style: const TextStyle(
+                                  fontSize: 10, fontFamily: 'monospace'),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                e.type.name,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: isOff ? Colors.blueGrey : Colors.green,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimePickerTile({
+    required String label,
+    required TimeOfDay time,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceColor(context),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppTheme.borderColor(context),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 14, color: AppTheme.sleepColor),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.onSurfaceMuted(context),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  SleepTimeUtils.formatTimeOfDay(time),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.onSurface(context),
+                  ),
+                ),
+                Icon(
+                  Icons.edit_outlined,
+                  size: 14,
+                  color: AppTheme.onSurfaceMuted(context),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -487,7 +1462,14 @@ class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateM
             child: OutlinedButton.icon(
               icon: const Icon(Icons.refresh_rounded),
               label: const Text('Ghi lại (xoá & làm mới)'),
-              onPressed: () => setState(() { _isSaved = false; _savedResult = null; }),
+              onPressed: () => setState(() {
+                _isSaved = false;
+                _savedResult = null;
+                _hasUserEditedTimes = false;
+                _hasUserEditedSlider = false;
+                _hasUserPickedShift = false;
+                _shiftWasAutoInferred = false;
+              }),
             ),
           ),
         ],
@@ -561,7 +1543,7 @@ class _LifeLogScreenState extends State<LifeLogScreen> with TickerProviderStateM
             const SizedBox(width: 12),
             Icon(Icons.bedtime_rounded, color: sleepColor, size: 14),
             const SizedBox(width: 4),
-            Text('${(entry['sleep_hours'] as double? ?? 0).toStringAsFixed(1)}h', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: sleepColor)),
+            Text(formatHoursMinutes(entry['sleep_hours'] as double? ?? 0), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: sleepColor)),
           ]),
           if ((entry['physical_symptoms'] as List?)?.isNotEmpty == true)
             Padding(

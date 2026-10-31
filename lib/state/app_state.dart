@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../models/wellbeing_score.dart';
 import '../models/recovery_task.dart';
 import '../models/daily_checkin.dart';
@@ -27,11 +28,15 @@ class AppState extends ChangeNotifier {
   List<RecoveryTask> get allTasks => List.unmodifiable(_tasks);
   List<DailyCheckin> get checkins => List.unmodifiable(_checkins);
 
-  List<RecoveryTask> get todayTasks =>
-      _tasks.where((t) => t.day == _currentDay || (t.day <= _currentDay && !t.isCompleted)).toList();
+  List<RecoveryTask> get todayTasks => _tasks
+      .where(
+        (t) => t.day == _currentDay || (t.day <= _currentDay && !t.isCompleted),
+      )
+      .toList();
 
   int get completedCount => _tasks.where((t) => t.isCompleted).length;
-  double get recoveryProgress => _tasks.isEmpty ? 0 : completedCount / _tasks.length;
+  double get recoveryProgress =>
+      _tasks.isEmpty ? 0 : completedCount / _tasks.length;
 
   DailyCheckin? get todayCheckin {
     final now = DateTime.now();
@@ -59,16 +64,23 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void recordCheckin(MoodLevel mood, List<String> stressFactors, String note) {
+  void recordCheckin(
+    MoodLevel mood,
+    List<String> stressFactors,
+    String note, {
+    int? streakDays,
+  }) {
+    final previous = todayCheckin;
     final newCheckin = DailyCheckin(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       timestamp: DateTime.now(),
       mood: mood,
-      stressFactors: stressFactors,
+      stressFactors: List.of(stressFactors),
       note: note,
     );
+    if (previous != null) _checkins.remove(previous);
     _checkins.insert(0, newCheckin);
-    _streakDays += 1;
+    _streakDays = streakDays ?? (_streakDays + (previous == null ? 1 : 0));
     notifyListeners();
   }
 

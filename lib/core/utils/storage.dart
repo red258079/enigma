@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../models/user.dart';
 
 class StorageUtil {
   static late SharedPreferences _prefs;
@@ -105,25 +106,126 @@ class StorageUtil {
     await _secureStorage.delete(key: 'remember_password');
   }
 
-  // ── Cached User Profile (Instant UI Startup) ──────────────────────────────
-  static const String _cachedUserKey = 'cached_user_json';
+  // ── Cached User Profile (Offline-First Auth) ──────────────────────────────
+  static const String _keyCachedUser = 'cached_user_profile';
 
-  static Future<void> saveCachedUser(Map<String, dynamic> userJson) async {
-    await _prefs.setString(_cachedUserKey, jsonEncode(userJson));
+  static Future<void> saveCachedUser(User user) async {
+    await _prefs.setString(_keyCachedUser, jsonEncode(user.toJson()));
   }
 
-  static Map<String, dynamic>? getCachedUser() {
-    final raw = _prefs.getString(_cachedUserKey);
-    if (raw != null && raw.isNotEmpty) {
-      try {
-        return jsonDecode(raw) as Map<String, dynamic>;
-      } catch (_) {}
+  static User? getCachedUser() {
+    final str = _prefs.getString(_keyCachedUser);
+    if (str == null || str.isEmpty) return null;
+    try {
+      final map = jsonDecode(str) as Map<String, dynamic>;
+      return User.fromJson(map);
+    } catch (_) {
+      return null;
     }
-    return null;
   }
 
   static Future<void> clearCachedUser() async {
-    await _prefs.remove(_cachedUserKey);
+    await _prefs.remove(_keyCachedUser);
+  }
+
+  // ── Offline Sync Queue ────────────────────────────────────────────────────
+  static const String _keySyncQueue = 'offline_sync_queue';
+
+  static List<Map<String, dynamic>> getSyncQueue() {
+    final str = _prefs.getString(_keySyncQueue);
+    if (str == null || str.isEmpty) return [];
+    try {
+      final list = jsonDecode(str) as List<dynamic>;
+      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> saveSyncQueue(List<Map<String, dynamic>> queue) async {
+    await _prefs.setString(_keySyncQueue, jsonEncode(queue));
+  }
+
+  static Future<void> addToSyncQueue(Map<String, dynamic> item) async {
+    final queue = getSyncQueue();
+    queue.add(item);
+    await saveSyncQueue(queue);
+  }
+
+  static Future<void> removeSyncQueueItem(String id) async {
+    final queue = getSyncQueue();
+    queue.removeWhere((item) => item['id'] == id);
+    await saveSyncQueue(queue);
+  }
+
+  static Future<void> clearSyncQueue() async {
+    await _prefs.remove(_keySyncQueue);
+  }
+
+  static int getPendingSyncCount() {
+    return getSyncQueue().length;
+  }
+
+  // ── Offline Feature Data Caches ──────────────────────────────────────────
+  static const String _keyCachedTasks = 'cached_tasks_list';
+  static const String _keyCachedDashboard = 'cached_dashboard_summary';
+  static const String _keyCachedTodayCheckin = 'cached_today_checkin';
+  static const String _keyCachedTodayLifeLog = 'cached_today_lifelog';
+
+  static Future<void> saveCachedTasks(List<dynamic> tasks) async {
+    await _prefs.setString(_keyCachedTasks, jsonEncode(tasks));
+  }
+
+  static List<dynamic>? getCachedTasks() {
+    final str = _prefs.getString(_keyCachedTasks);
+    if (str == null || str.isEmpty) return null;
+    try {
+      return jsonDecode(str) as List<dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> saveCachedDashboard(Map<String, dynamic> data) async {
+    await _prefs.setString(_keyCachedDashboard, jsonEncode(data));
+  }
+
+  static Map<String, dynamic>? getCachedDashboard() {
+    final str = _prefs.getString(_keyCachedDashboard);
+    if (str == null || str.isEmpty) return null;
+    try {
+      return jsonDecode(str) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> saveCachedTodayCheckin(Map<String, dynamic> data) async {
+    await _prefs.setString(_keyCachedTodayCheckin, jsonEncode(data));
+  }
+
+  static Map<String, dynamic>? getCachedTodayCheckin() {
+    final str = _prefs.getString(_keyCachedTodayCheckin);
+    if (str == null || str.isEmpty) return null;
+    try {
+      return jsonDecode(str) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> saveCachedTodayLifeLog(Map<String, dynamic> data) async {
+    await _prefs.setString(_keyCachedTodayLifeLog, jsonEncode(data));
+  }
+
+  static Map<String, dynamic>? getCachedTodayLifeLog() {
+    final str = _prefs.getString(_keyCachedTodayLifeLog);
+    if (str == null || str.isEmpty) return null;
+    try {
+      return jsonDecode(str) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
   }
 
   // ── Sleep Reminder Preferences ───────────────────────────────────────────

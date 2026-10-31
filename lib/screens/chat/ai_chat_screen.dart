@@ -51,6 +51,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
   void _send() {
     final text = _inputController.text.trim();
     if (text.isEmpty) return;
+    FocusScope.of(context).unfocus();
     _inputController.clear();
     final chat = Provider.of<ChatProvider>(context, listen: false);
     chat.sendMessage(text);
@@ -68,10 +69,23 @@ class _AiChatScreenState extends State<AiChatScreen> {
       }
     });
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Row(
+    final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.translucent,
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          actions: [
+            if (isKeyboardOpen)
+              IconButton(
+                icon: const Icon(Icons.keyboard_hide_rounded),
+                tooltip: 'Thu gọn bàn phím',
+                onPressed: () => FocusScope.of(context).unfocus(),
+              ),
+          ],
+          title: Row(
           children: [
             Stack(
               children: [
@@ -139,6 +153,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
             Expanded(
               child: ListView.builder(
                 controller: _scrollController,
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                 itemCount: chat.messages.length + (chat.isLoading ? 1 : 0),
                 itemBuilder: (context, index) {
@@ -190,9 +205,17 @@ class _AiChatScreenState extends State<AiChatScreen> {
                       controller: _inputController,
                       minLines: 1,
                       maxLines: 4,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: 'Nhập câu hỏi hoặc tâm sự khó khăn ca làm...',
-                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        suffixIcon: isKeyboardOpen
+                            ? IconButton(
+                                icon: const Icon(Icons.keyboard_hide_rounded, size: 20),
+                                tooltip: 'Ẩn bàn phím',
+                                color: AppColors.textMuted,
+                                onPressed: () => FocusScope.of(context).unfocus(),
+                              )
+                            : null,
                       ),
                       onSubmitted: (_) => _send(),
                     ),
@@ -213,6 +236,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 

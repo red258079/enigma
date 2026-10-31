@@ -5,6 +5,12 @@ import '../../theme/app_theme.dart';
 import '../../widgets/task_tile.dart';
 import '../../core/api/api_client.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/utils/storage.dart';
+import '../../core/services/sync_service.dart';
+import '../../core/onboarding/models/feature_keys.dart';
+import '../../core/onboarding/models/onboarding_step.dart';
+import '../../core/onboarding/feature_tour_controller.dart';
+import '../../core/onboarding/widgets/help_guide_button.dart';
 
 class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key});
@@ -19,11 +25,30 @@ class _TasksScreenState extends State<TasksScreen> with SingleTickerProviderStat
   bool _isLoading = true;
   PillarType? _selectedPillarFilter;
 
+  final GlobalKey _phaseTabsKey = GlobalKey();
+  final GlobalKey _pillarFilterKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadTasks();
+  }
+
+  void _startTour({bool force = false}) {
+    FeatureTour.start(
+      context,
+      featureKey: FeatureKeys.tasks,
+      force: force,
+      steps: [
+        OnboardingStep(
+          targetKey: _phaseTabsKey,
+          title: 'Nhiệm Vụ Thích Nghi',
+          description: 'Hoàn thành các thử thách phục hồi mỗi ngày để rèn luyện thói quen và nhận điểm thưởng.',
+          icon: Icons.flag_rounded,
+        ),
+      ],
+    );
   }
 
   @override
@@ -48,6 +73,7 @@ class _TasksScreenState extends State<TasksScreen> with SingleTickerProviderStat
 
       if (mounted) {
         final List<dynamic> data = res.data;
+        await StorageUtil.saveCachedTasks(data);
         setState(() {
           _apiTasks = data.map((item) => RecoveryTask.fromJson(item)).toList();
           _isLoading = false;
@@ -55,11 +81,21 @@ class _TasksScreenState extends State<TasksScreen> with SingleTickerProviderStat
       }
     } catch (e) {
       if (mounted) {
-        // Fallback to local default tasks
-        setState(() {
-          _apiTasks = RecoveryTask.defaultTasks;
-          _isLoading = false;
-        });
+        // Fallback to local cached tasks if available, otherwise default
+        final cached = StorageUtil.getCachedTasks();
+        if (cached != null && cached.isNotEmpty) {
+          setState(() {
+            _apiTasks = cached
+                .map((item) => RecoveryTask.fromJson(Map<String, dynamic>.from(item as Map)))
+                .toList();
+            _isLoading = false;
+          });
+        } else {
+          setState(() {
+            _apiTasks = RecoveryTask.defaultTasks;
+            _isLoading = false;
+          });
+        }
       }
     }
   }
@@ -70,18 +106,37 @@ class _TasksScreenState extends State<TasksScreen> with SingleTickerProviderStat
       task.isCompleted = !task.isCompleted;
     });
 
+    // Cập nhật lại bộ nhớ cache ngoại tuyến
+    await StorageUtil.saveCachedTasks(_apiTasks.map((t) => t.toJson()).toList());
+
     if (AppConstants.useMockApi) return;
 
     try {
       await ApiClient.instance.post('/tasks/${task.id}/toggle');
     } catch (e) {
-      // Revert if error
-      setState(() {
-        task.isCompleted = !task.isCompleted;
-      });
+      // Khi mất mạng: KHÔNG rollback UI! Đưa vào hàng đợi sao lưu lên database
+      await SyncService.instance.enqueueSync(
+        type: 'task_toggle',
+        payload: {
+          'task_id': task.id,
+          'is_completed': task.isCompleted,
+        },
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Không thể cập nhật trạng thái nhiệm vụ. Vui lòng thử lại.')),
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.cloud_off_rounded, color: Colors.white, size: 18),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text('Đã cập nhật ngoại tuyến. Sẽ tự động sao lưu khi có mạng.'),
+                ),
+              ],
+            ),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     }
@@ -103,26 +158,36 @@ class _TasksScreenState extends State<TasksScreen> with SingleTickerProviderStat
           ],
         ),
         actions: [
+          HelpGuideButton(
+            onTap: () => _startTour(force: true),
+            tooltip: 'Xem hướng dẫn Nhiệm vụ',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Làm mới',
             onPressed: _loadTasks,
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: AppTheme.primary,
-          indicatorWeight: 3,
-          indicatorSize: TabBarIndicatorSize.tab,
-          labelColor: AppTheme.primary,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-          unselectedLabelColor: AppTheme.onSurfaceMuted(context),
-          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
-          tabs: const [
-            Tab(text: '1. Chuẩn bị', icon: Icon(Icons.backpack_outlined, size: 18)),
-            Tab(text: '2. Hòa nhập', icon: Icon(Icons.handshake_outlined, size: 18)),
-            Tab(text: '3. Duy trì', icon: Icon(Icons.rocket_launch_outlined, size: 18)),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: KeyedSubtree(
+            key: _phaseTabsKey,
+            child: TabBar(
+              controller: _tabController,
+              indicatorColor: AppTheme.primary,
+              indicatorWeight: 3,
+              indicatorSize: TabBarIndicatorSize.tab,
+              labelColor: AppTheme.primary,
+              labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              unselectedLabelColor: AppTheme.onSurfaceMuted(context),
+              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+              tabs: const [
+                Tab(text: '1. Chuẩn bị', icon: Icon(Icons.backpack_outlined, size: 18)),
+                Tab(text: '2. Hòa nhập', icon: Icon(Icons.handshake_outlined, size: 18)),
+                Tab(text: '3. Duy trì', icon: Icon(Icons.rocket_launch_outlined, size: 18)),
+              ],
+            ),
+          ),
         ),
       ),
       body: _isLoading
@@ -130,7 +195,10 @@ class _TasksScreenState extends State<TasksScreen> with SingleTickerProviderStat
           : Column(
               children: [
                 // Pillar Filter Chips
-                _buildPillarFilterBar(),
+                KeyedSubtree(
+                  key: _pillarFilterKey,
+                  child: _buildPillarFilterBar(),
+                ),
 
                 // Tab Content
                 Expanded(
@@ -183,7 +251,7 @@ class _TasksScreenState extends State<TasksScreen> with SingleTickerProviderStat
               padding: const EdgeInsets.only(right: 6),
               child: FilterChip(
                 avatar: Icon(info.icon, size: 14, color: isSelected ? Colors.white : info.color),
-                label: Text(info.title, style: TextStyle(fontSize: 12, color: isSelected ? Colors.white : AppTheme.onSurface(context))),
+                label: Text(info.title.split(' ')[0], style: TextStyle(fontSize: 12, color: isSelected ? Colors.white : AppTheme.onSurface(context))),
                 selected: isSelected,
                 onSelected: (val) => setState(() => _selectedPillarFilter = val ? pillar : null),
                 selectedColor: info.color,

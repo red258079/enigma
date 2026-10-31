@@ -1,19 +1,6 @@
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart';
-
 class ApiConstants {
-  // Default base URL depending on platform:
-  // Android Emulator uses 10.0.2.2 to access host machine
-  // Windows / Web / iOS uses localhost
-  static String get defaultBaseUrl {
-    if (kIsWeb) return 'http://localhost:8000';
-    try {
-      if (Platform.isAndroid) {
-        return 'http://10.0.2.2:8000';
-      }
-    } catch (_) {}
-    return 'http://localhost:8000';
-  }
+  // Cloud Backend URL (Render 24/7)
+  static String get defaultBaseUrl => 'https://mentality-38jh.onrender.com';
 
   // Endpoints
   static const String register = '/auth/register';

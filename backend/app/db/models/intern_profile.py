@@ -1,7 +1,7 @@
 import uuid
 import enum
 from sqlalchemy import (
-    Column, String, Date, SmallInteger, Enum, DateTime, ForeignKey
+    Column, String, Date, SmallInteger, Integer, Float, Enum, DateTime, ForeignKey
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
@@ -29,6 +29,16 @@ class InternProfile(Base):
         Enum(InternPhase, name="intern_phase", create_type=False, values_callable=lambda x: [e.value for e in x]),
         default=InternPhase.preparation
     )
+    
+    # ── Workplace GPS & Shift Configuration ──
+    company_lat            = Column(Float, nullable=True)
+    company_lng            = Column(Float, nullable=True)
+    company_radius         = Column(Integer, default=500)
+    work_shift             = Column(String(50), default="day_12h")
+    workplace_type         = Column(String(50), default="factory_locker")
+    dorm_lat               = Column(Float, nullable=True)
+    dorm_lng               = Column(Float, nullable=True)
+
     initial_sleep_score    = Column(SmallInteger, nullable=True)
     initial_physical_score = Column(SmallInteger, nullable=True)
     initial_mental_score   = Column(SmallInteger, nullable=True)
@@ -39,3 +49,4 @@ class InternProfile(Base):
 
     # Relationships
     user = relationship("User", back_populates="intern_profile")
+

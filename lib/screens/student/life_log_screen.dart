@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme/app_theme.dart';
 import '../../core/api/life_log_repository.dart';
@@ -10,6 +9,23 @@ import '../../core/services/sleep_sensor_service.dart';
 import '../../core/services/workplace_service.dart';
 import '../../core/services/reminder_service.dart';
 import '../../core/utils/storage.dart';
+
+/// Pure function checking whether a given ISO date/timestamp string [iso]
+/// corresponds to the same calendar day as [now] in the local time zone.
+bool isSameLocalDay(String? iso, DateTime now) {
+  if (iso == null || iso.trim().isEmpty) return false;
+  try {
+    final parsed = DateTime.tryParse(iso);
+    if (parsed == null) return false;
+    final localDt = parsed.toLocal();
+    final localNow = now.toLocal();
+    return localDt.year == localNow.year &&
+        localDt.month == localNow.month &&
+        localDt.day == localNow.day;
+  } catch (_) {
+    return false;
+  }
+}
 
 /// Màn hình Ghi Nhật Ký Sinh Hoạt — giờ ngủ, mức stress, triệu chứng
 class LifeLogScreen extends StatefulWidget {
@@ -41,18 +57,14 @@ class _LifeLogScreenState extends State<LifeLogScreen>
   bool _isUsagePermissionGranted = false;
   bool _isLoadingSleepData = false;
   ScreenGap? _detectedSleepGap;
-  bool _isChargingNow = false;
-  bool _isAtDormNow = false;
   bool _isHighConfidence = false;
   List<String> _confidenceReasons = [];
-  List<ScreenEvent> _debugScreenEvents = [];
-  bool _debugTestMode = false;
-  ScreenGap? _debugTestModeGap;
+  List<ScreenEvent> _cachedScreenEvents = [];
 
   // States
   bool _isLoading = false;
-  bool _isSaved = false;
-  Map<String, dynamic>? _savedResult;
+  bool _hasCompletedToday = false;
+  Map<String, dynamic>? _todayLifeLogData;
 
   // Tab controller for history vs new entry
   late TabController _tabController;
@@ -87,6 +99,7 @@ class _LifeLogScreenState extends State<LifeLogScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 2, vsync: this);
+    _checkTodayLifeLog();
     _loadHistory();
     _loadSleepSensorData();
   }
@@ -103,7 +116,75 @@ class _LifeLogScreenState extends State<LifeLogScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // Re-evaluate sleep data and permissions when user returns to app
+      _checkTodayLifeLog();
       _loadSleepSensorData();
+    }
+  }
+
+  Future<void> _checkTodayLifeLog() async {
+    try {
+      final res = await LifeLogRepository.getTodayLifeLog();
+      final hasLog = res['has_log_today'] as bool? ?? false;
+      final data = res['data'] as Map<String, dynamic>?;
+      if (hasLog && data != null) {
+        final dateStr = (data['date'] ?? data['journal_date'] ?? data['created_at']) as String?;
+        if (isSameLocalDay(dateStr, DateTime.now())) {
+          if (mounted) {
+            setState(() {
+              _todayLifeLogData = data;
+              _hasCompletedToday = true;
+            });
+          }
+          return;
+        }
+      }
+
+      // If hasLog is false, date is missing, or not local today: keep form visible
+      if (mounted) {
+        setState(() {
+          _hasCompletedToday = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[LifeLogScreen] Lỗi kiểm tra nhật ký hôm nay: $e');
+    }
+  }
+
+  bool get _isLogQueuedOffline {
+    if (_todayLifeLogData?['is_offline'] == true) {
+      final dateStr = (_todayLifeLogData?['date'] ??
+          _todayLifeLogData?['journal_date'] ??
+          _todayLifeLogData?['created_at']) as String?;
+      if (dateStr == null || isSameLocalDay(dateStr, DateTime.now())) {
+        return true;
+      }
+    }
+    try {
+      final queue = StorageUtil.getSyncQueue();
+      final now = DateTime.now();
+      return queue.any((item) {
+        if (item['type'] != 'life_log') return false;
+        final timestamp = item['timestamp'] as String?;
+        if (timestamp != null) {
+          return isSameLocalDay(timestamp, now);
+        }
+        final payload = item['payload'] as Map<String, dynamic>?;
+        final payloadDate = (payload?['date'] ?? payload?['journal_date']) as String?;
+        if (payloadDate != null) {
+          return isSameLocalDay(payloadDate, now);
+        }
+        final idStr = item['id'] as String?;
+        if (idStr != null) {
+          final ms = int.tryParse(idStr);
+          if (ms != null) {
+            final dt = DateTime.fromMillisecondsSinceEpoch(ms);
+            return isSameLocalDay(dt.toIso8601String(), now);
+          }
+        }
+        return false;
+      });
+    } catch (_) {
+      return false;
     }
   }
 
@@ -133,8 +214,15 @@ class _LifeLogScreenState extends State<LifeLogScreen>
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _isSaved = true;
-          _savedResult = result;
+          _hasCompletedToday = true;
+          _todayLifeLogData = {
+            ...result,
+            'date': DateTime.now().toIso8601String(),
+            'sleep_hours': _sleepHours,
+            'shift_type': _shiftType,
+            'stress_level': _stressLevel,
+            'wellbeing_score': result['wellbeing_score'] ?? 80,
+          };
           _hasUserEditedTimes = false;
           _hasUserEditedSlider = false;
           _hasUserPickedShift = false;
@@ -175,7 +263,7 @@ class _LifeLogScreenState extends State<LifeLogScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _isSaved ? _buildSavedView() : _buildEntryForm(),
+          _hasCompletedToday ? _buildCompletedTodayView() : _buildEntryForm(),
           _buildHistoryView(),
         ],
       ),
@@ -191,7 +279,6 @@ class _LifeLogScreenState extends State<LifeLogScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildSleepSuggestionCard(),
-          if (kDebugMode) _buildSleepDebugPanel(),
           const SizedBox(height: 20),
 
           _buildSectionHeader('💤 Số giờ ngủ ca vừa rồi', formatHoursMinutes(_sleepHours)),
@@ -414,7 +501,6 @@ class _LifeLogScreenState extends State<LifeLogScreen>
       final chargingData =
           await SleepSensorService.instance.getChargingState();
       final isCharging = chargingData['isCharging'] as bool? ?? false;
-      _isChargingNow = isCharging;
 
       // GPS soft signal: evaluate current location once without prompting new permission
       bool isAtDorm = false;
@@ -423,7 +509,6 @@ class _LifeLogScreenState extends State<LifeLogScreen>
             .evaluateCurrentLocation(promptPermission: false);
         isAtDorm = WorkplaceService.instance.status == WorkplaceStatus.atDorm;
       } catch (_) {}
-      _isAtDormNow = isAtDorm;
 
       if (!hasPermission) {
         // Fall back to shift defaults
@@ -431,7 +516,7 @@ class _LifeLogScreenState extends State<LifeLogScreen>
         _suggestedBedtime = defaults.bedtime;
         _suggestedWakeTime = defaults.wakeTime;
         _detectedSleepGap = null;
-        _debugScreenEvents = [];
+        _cachedScreenEvents = [];
         _isHighConfidence = false;
         _confidenceReasons = [];
         if (mounted) setState(() => _isLoadingSleepData = false);
@@ -441,7 +526,7 @@ class _LifeLogScreenState extends State<LifeLogScreen>
       // 3. Query last 24h screen events
       final events =
           await SleepSensorService.instance.getScreenEvents(hours: 24);
-      _debugScreenEvents = events;
+      _cachedScreenEvents = events;
 
       // 4. Detect the sleep gap with wide window (shiftType null) first
       final gap = SleepDetector.findLongestSleepGap(
@@ -449,14 +534,6 @@ class _LifeLogScreenState extends State<LifeLogScreen>
         shiftType: _hasUserPickedShift ? _shiftType : null,
       );
       _detectedSleepGap = gap;
-      if (_debugTestMode) {
-        _debugTestModeGap = SleepDetector.findLongestSleepGap(
-          events,
-          minSleepDuration: const Duration(minutes: 5),
-          maxSleepDuration: null,
-          ignoreSleepWindow: true,
-        );
-      }
 
       if (gap != null) {
         // Auto-select _shiftType if user hasn't manually picked a shift chip
@@ -517,39 +594,6 @@ class _LifeLogScreenState extends State<LifeLogScreen>
     await SleepSensorService.instance.requestUsagePermission();
   }
 
-  void _onToggleDebugTestMode(bool val) {
-    setState(() {
-      _debugTestMode = val;
-      if (val) {
-        _debugTestModeGap = SleepDetector.findLongestSleepGap(
-          _debugScreenEvents,
-          minSleepDuration: const Duration(minutes: 5),
-          maxSleepDuration: null,
-          ignoreSleepWindow: true,
-        );
-      } else {
-        _debugTestModeGap = null;
-      }
-    });
-  }
-
-  Future<void> _copyDebugEventsToClipboard() async {
-    if (_debugScreenEvents.isEmpty) return;
-    final text = _debugScreenEvents
-        .map((e) => '${_formatDateTime(e.timestamp)} ${e.type.name}')
-        .join('\n');
-    await Clipboard.setData(ClipboardData(text: text));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Đã copy events vào clipboard'),
-          duration: Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
-
   void _onShiftChanged(String? newShift) {
     setState(() {
       _hasUserPickedShift = true;
@@ -557,19 +601,11 @@ class _LifeLogScreenState extends State<LifeLogScreen>
       _shiftType = newShift;
       // Re-evaluate sleep gap for new shift if we have events
       ScreenGap? newGap;
-      if (_debugScreenEvents.isNotEmpty) {
+      if (_cachedScreenEvents.isNotEmpty) {
         newGap = SleepDetector.findLongestSleepGap(
-          _debugScreenEvents,
+          _cachedScreenEvents,
           shiftType: newShift,
         );
-        if (_debugTestMode) {
-          _debugTestModeGap = SleepDetector.findLongestSleepGap(
-            _debugScreenEvents,
-            minSleepDuration: const Duration(minutes: 5),
-            maxSleepDuration: null,
-            ignoreSleepWindow: true,
-          );
-        }
       }
       _detectedSleepGap = newGap;
       if (newGap == null) {
@@ -592,16 +628,6 @@ class _LifeLogScreenState extends State<LifeLogScreen>
         _sleepHours = newGap.durationHours.clamp(0.0, 14.0);
       }
     });
-  }
-
-  String _formatDateTime(DateTime dt) {
-    final local = dt.toLocal();
-    final h = local.hour.toString().padLeft(2, '0');
-    final m = local.minute.toString().padLeft(2, '0');
-    final s = local.second.toString().padLeft(2, '0');
-    final d = local.day.toString().padLeft(2, '0');
-    final mo = local.month.toString().padLeft(2, '0');
-    return '$h:$m:$s $d/$mo';
   }
 
   Future<void> _pickBedtime() async {
@@ -996,221 +1022,6 @@ class _LifeLogScreenState extends State<LifeLogScreen>
     );
   }
 
-  // ─── Temporary Debug-Only Panel (kDebugMode) ──────────────────────────────────
-
-  Widget _buildSleepDebugPanel() {
-    return Container(
-      margin: const EdgeInsets.only(top: 14),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF1E1E1E)
-            : const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.amber.withOpacity(0.5), width: 1.2),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.bug_report_outlined, size: 18, color: Colors.amber),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'DEBUG: so với Digital Wellbeing',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                    color: Colors.amber,
-                  ),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.refresh, size: 18),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                tooltip: 'Tải lại sự kiện',
-                onPressed: _loadSleepSensorData,
-              ),
-            ],
-          ),
-          const Divider(height: 16),
-          Text(
-            '• UsageStats Permission: ${_isUsagePermissionGranted ? "GRANTED ✅" : "DENIED ❌"}',
-            style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
-          ),
-          Text(
-            '• Đang sạc pin (lúc mở): ${_isChargingNow ? "CÓ ⚡" : "KHÔNG"}',
-            style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
-          ),
-          Text(
-            '• Ở phòng trọ (GPS atDorm): ${_isAtDormNow ? "ĐÚNG 🏠" : "KHÔNG"}',
-            style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
-          ),
-          Text(
-            '• Detected Sleep Gap: ${_detectedSleepGap != null ? "${_formatDateTime(_detectedSleepGap!.start)} -> ${_formatDateTime(_detectedSleepGap!.end)} (${formatHoursMinutes(_detectedSleepGap!.durationHours)})" : "None"}',
-            style: const TextStyle(
-                fontSize: 11,
-                fontFamily: 'monospace',
-                fontWeight: FontWeight.w700),
-          ),
-          Text(
-            '• Độ tin cậy cao: ${_isHighConfidence ? "CÓ (${_confidenceReasons.join(", ")})" : "Bình thường"}',
-            style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '• Test mode (min 5p, no window/cap):',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w600,
-                    color: _debugTestMode ? Colors.amber : null,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                height: 24,
-                child: Switch(
-                  value: _debugTestMode,
-                  activeColor: Colors.amber,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: _onToggleDebugTestMode,
-                ),
-              ),
-            ],
-          ),
-          if (_debugTestMode) ...[
-            const SizedBox(height: 4),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.amber.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.amber.withOpacity(0.35)),
-              ),
-              child: Text(
-                '⚡ Test Mode Gap: ${_debugTestModeGap != null ? "${_formatDateTime(_debugTestModeGap!.start)} -> ${_formatDateTime(_debugTestModeGap!.end)} (${formatHoursMinutes(_debugTestModeGap!.durationHours)})" : "None"}',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w700,
-                  color: Colors.amber,
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '• Raw Events (${_debugScreenEvents.length}):',
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-                ),
-              ),
-              if (_debugScreenEvents.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                InkWell(
-                  onTap: _copyDebugEventsToClipboard,
-                  borderRadius: BorderRadius.circular(6),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.amber.withOpacity(0.35)),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.copy_rounded, size: 11, color: Colors.amber),
-                        SizedBox(width: 4),
-                        Text(
-                          'Copy events',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.amber,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 4),
-          Container(
-            constraints: const BoxConstraints(maxHeight: 160),
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppTheme.borderColor(context)),
-            ),
-            child: _debugScreenEvents.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(10.0),
-                    child: Text(
-                      'Chưa có sự kiện nào (hãy bấm "Cấp quyền" để đọc UsageStats)',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                  )
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: _debugScreenEvents.length,
-                    itemBuilder: (ctx, i) {
-                      final e = _debugScreenEvents[i];
-                      final isOff = e.isScreenOff;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        child: Row(
-                          children: [
-                            Icon(
-                              isOff
-                                  ? Icons.phone_android
-                                  : Icons.screen_lock_portrait,
-                              size: 13,
-                              color: isOff ? Colors.blueGrey : Colors.green,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              _formatDateTime(e.timestamp),
-                              style: const TextStyle(
-                                  fontSize: 10, fontFamily: 'monospace'),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                e.type.name,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: isOff ? Colors.blueGrey : Colors.green,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildTimePickerTile({
     required String label,
@@ -1375,101 +1186,270 @@ class _LifeLogScreenState extends State<LifeLogScreen>
     );
   }
 
-  // ─── Saved View ─────────────────────────────────────────────────────────────
+  // ─── Completed Today View ───────────────────────────────────────────────────
 
-  Widget _buildSavedView() {
-    final result = _savedResult;
-    if (result == null) return const SizedBox.shrink();
+  int _extractWellbeingScore(Map<String, dynamic> data) {
+    if (data['wellbeing_score'] != null) {
+      return (data['wellbeing_score'] as num).toInt();
+    }
+    final stress = (data['stress_level'] as num?)?.toInt() ?? 2;
+    final sleep = (data['sleep_hours'] as num?)?.toDouble() ?? 7.0;
+    final symptoms = (data['physical_symptoms'] as List?)?.length ?? 0;
+    int score = 100 - (stress - 1) * 8;
+    if (sleep < 5) {
+      score -= 30;
+    } else if (sleep < 6) {
+      score -= 20;
+    } else if (sleep < 7) {
+      score -= 10;
+    } else if (sleep >= 8) {
+      score += 5;
+    }
+    if (symptoms > 0) score -= 15;
+    return score.clamp(30, 100);
+  }
 
-    final riskLevel = (result['risk_assessment'] as Map?)?['level'] as String? ?? 'GREEN';
-    final wellbeingScore = result['wellbeing_score'] as int? ?? 70;
-    final stressDesc = result['stress_description'] as Map? ?? {};
-    final sleepQuality = result['sleep_quality'] as Map? ?? {};
-    final riskActions = ((result['risk_assessment'] as Map?)?['recommended_actions'] as List?)?.cast<String>() ?? [];
+  Widget _buildCompletedTodayView() {
+    final data = _todayLifeLogData ?? {};
+    final sleepHours = (data['sleep_hours'] as num?)?.toDouble() ?? 0.0;
+    final shiftType = data['shift_type'] as String?;
+    final stressLevel = (data['stress_level'] as num?)?.toInt() ?? 3;
+    final wellbeingScore = _extractWellbeingScore(data);
+    final isOfflineQueued = _isLogQueuedOffline;
+
+    final shiftLabel = shiftType == 'day'
+        ? 'Ca ngày ☀️'
+        : shiftType == 'night'
+            ? 'Ca đêm 🌙'
+            : 'Không chia ca';
+
+    final stressLabel = (stressLevel >= 1 && stressLevel <= 5)
+        ? _stressLabels[stressLevel]
+        : 'Mức $stressLevel';
+
+    final riskAssessment = data['risk_assessment'] as Map<String, dynamic>? ??
+        (data['risk_assessment'] as Map?)?.cast<String, dynamic>();
+    final riskLevel = (riskAssessment?['level'] as String?)?.toUpperCase() ?? 'GREEN';
+    final riskActions = ((riskAssessment?['recommended_actions'] ?? riskAssessment?['actions']) as List?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
 
     Color riskColor = AppTheme.accentMint;
     String riskEmoji = '✅';
-    if (riskLevel == 'YELLOW') { riskColor = AppTheme.accentAmber; riskEmoji = '⚠️'; }
-    if (riskLevel == 'RED') { riskColor = AppTheme.accentCoral; riskEmoji = '🆘'; }
+    if (riskLevel == 'YELLOW' || riskLevel == 'MEDIUM') {
+      riskColor = AppTheme.accentAmber;
+      riskEmoji = '⚠️';
+    } else if (riskLevel == 'RED' || riskLevel == 'HIGH') {
+      riskColor = AppTheme.accentCoral;
+      riskEmoji = '🆘';
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          // Success header
+          // Completed Card
           Container(
+            width: double.infinity,
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [AppTheme.accentMint.withOpacity(0.12), AppTheme.surfaceColor(context)]),
+              gradient: LinearGradient(
+                colors: [
+                  AppTheme.accentMint.withOpacity(0.14),
+                  AppTheme.surfaceColor(context),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppTheme.accentMint.withOpacity(0.3)),
-            ),
-            child: Column(children: [
-              const Icon(Icons.check_circle_rounded, color: AppTheme.accentMint, size: 48),
-              const SizedBox(height: 12),
-              Text('Đã lưu nhật ký hôm nay!', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.onSurface(context))),
-              const SizedBox(height: 8),
-              Text('Điểm sức khỏe hôm nay: $wellbeingScore/100',
-                style: TextStyle(fontSize: 14, color: _wellbeingColor(wellbeingScore), fontWeight: FontWeight.w600)),
-            ]),
-          ).animate().fadeIn(duration: 500.ms).scale(curve: Curves.elasticOut),
-
-          const SizedBox(height: 16),
-
-          // Metrics row
-          Row(children: [
-            Expanded(child: _buildResultMetric('Stress', stressDesc['emoji'] as String? ?? '😐', stressDesc['label'] as String? ?? '', riskColor)),
-            const SizedBox(width: 12),
-            Expanded(child: _buildResultMetric('Giấc ngủ', '💤', sleepQuality['label'] as String? ?? '', AppTheme.sleepColor)),
-          ]),
-
-          const SizedBox(height: 16),
-
-          // AI Risk Assessment
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: riskColor.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: riskColor.withOpacity(0.3)),
+              border: Border.all(color: AppTheme.accentMint.withOpacity(0.35)),
             ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
-                  Text(riskEmoji, style: const TextStyle(fontSize: 18)),
-                  const SizedBox(width: 8),
-                  Text('AI Agent đánh giá: $riskLevel', style: TextStyle(fontWeight: FontWeight.w700, color: riskColor, fontSize: 14)),
-                ]),
-                if (riskActions.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  ...riskActions.take(3).map((action) => Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Icon(Icons.arrow_right_rounded, color: riskColor, size: 18),
-                      Expanded(child: Text(action, style: TextStyle(fontSize: 12, color: AppTheme.onSurfaceSecondary(context), height: 1.4))),
-                    ]),
-                  )),
+                const Icon(
+                  Icons.check_circle_rounded,
+                  color: AppTheme.accentMint,
+                  size: 52,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Bạn đã hoàn thành nhật ký hôm nay ✅',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.onSurface(context),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Điểm sức khỏe hôm nay: $wellbeingScore/100',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: _wellbeingColor(wellbeingScore),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (isOfflineQueued) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accentAmber.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.accentAmber.withOpacity(0.4)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.cloud_upload_outlined, size: 14, color: AppTheme.accentAmber),
+                        SizedBox(width: 6),
+                        Text(
+                          'đang chờ đồng bộ',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.accentAmber,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ],
             ),
-          ).animate(delay: 200.ms).fadeIn().slideY(begin: 0.1, end: 0),
+          ).animate().fadeIn(duration: 400.ms).scale(curve: Curves.easeOutBack),
+
+          const SizedBox(height: 16),
+
+          // Detailed metrics row 1: Giấc ngủ & Ca làm việc
+          Row(
+            children: [
+              Expanded(
+                child: _buildResultMetric(
+                  'Giấc ngủ',
+                  '💤',
+                  formatHoursMinutes(sleepHours),
+                  AppTheme.sleepColor,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildResultMetric(
+                  'Ca làm việc',
+                  shiftType == 'night' ? '🌙' : '☀️',
+                  shiftLabel,
+                  shiftType == 'night' ? AppTheme.sleepColor : AppTheme.accentAmber,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Detailed metrics row 2: Stress & Điểm sức khỏe
+          Row(
+            children: [
+              Expanded(
+                child: _buildResultMetric(
+                  'Mức stress',
+                  '🧠',
+                  stressLabel,
+                  _stressColors[stressLevel.clamp(1, 5)],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildResultMetric(
+                  'Sức khỏe',
+                  '💖',
+                  '$wellbeingScore/100',
+                  _wellbeingColor(wellbeingScore),
+                ),
+              ),
+            ],
+          ),
+
+          // AI Risk Assessment & actions (when available from save result or cache)
+          if (riskAssessment != null && (riskActions.isNotEmpty || riskAssessment.isNotEmpty)) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: riskColor.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: riskColor.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(riskEmoji, style: const TextStyle(fontSize: 18)),
+                      const SizedBox(width: 8),
+                      Text(
+                        'AI Agent đánh giá: $riskLevel',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: riskColor,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (riskActions.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    ...riskActions.take(3).map((action) => Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.arrow_right_rounded, color: riskColor, size: 18),
+                              Expanded(
+                                child: Text(
+                                  action,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.onSurfaceSecondary(context),
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )),
+                  ],
+                ],
+              ),
+            ).animate(delay: 200.ms).fadeIn().slideY(begin: 0.1, end: 0),
+          ],
 
           const SizedBox(height: 20),
 
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Ghi lại (xoá & làm mới)'),
-              onPressed: () => setState(() {
-                _isSaved = false;
-                _savedResult = null;
-                _hasUserEditedTimes = false;
-                _hasUserEditedSlider = false;
-                _hasUserPickedShift = false;
-                _shiftWasAutoInferred = false;
-              }),
+          // Information banner explaining once per day
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceColor(context),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppTheme.borderColor(context)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded, size: 18, color: AppTheme.onSurfaceMuted(context)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Nhật ký sinh hoạt được ghi nhận 1 lần mỗi ngày. Bạn có thể xem lại lịch sử các ngày trước ở tab Lịch sử bên cạnh.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.onSurfaceMuted(context),
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

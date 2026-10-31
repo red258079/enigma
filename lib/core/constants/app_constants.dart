@@ -1,8 +1,8 @@
 class AppConstants {
   static const bool useMockApi = false; // Set to false to use real FastAPI backend + PostgreSQL
   
-  // Real backend URL (IP máy tính trong mạng Wi-Fi để điện thoại thật kết nối trực tiếp)
-  static const String apiBaseUrl = 'http://192.168.43.25:8000'; 
+  // Cloud Backend URL (Render 24/7)
+  static const String apiBaseUrl = 'https://mentality-38jh.onrender.com'; 
 
   // Keys
   static const String tokenKey = 'jwt_token';

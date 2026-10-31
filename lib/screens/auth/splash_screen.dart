@@ -1,6 +1,8 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../state/auth_state.dart';
 import '../../core/utils/storage.dart';
 import 'onboarding_screen.dart';
@@ -31,9 +33,9 @@ class _SplashScreenState extends State<SplashScreen> {
 
     // Chờ nốt animation splash nếu auth check xong sớm
     await splashDelay;
-    
+
     if (!mounted) return;
-    
+
     final hasSeenOnboarding = StorageUtil.hasSeenOnboarding;
 
     if (authState.isAuthenticated) {
@@ -101,11 +103,15 @@ class _SplashScreenState extends State<SplashScreen> {
             const SizedBox(height: 20),
             const Text(
               'Enigma',
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 2),
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
             ),
             const SizedBox(height: 8),
             const Text(
-              'Wellness Companion',
+              'ENIGMA TEAM',
               style: TextStyle(fontSize: 16, color: Colors.grey),
             ),
           ],

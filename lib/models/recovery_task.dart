@@ -161,6 +161,19 @@ class RecoveryTask {
     },
   };
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'unlock_day': day,
+      'phase': phase.name,
+      'pillar': pillar.name,
+      'title': title,
+      'description': description,
+      'duration_minutes': durationMinutes,
+      'is_completed': isCompleted,
+    };
+  }
+
   static List<RecoveryTask> get defaultTasks => [
         // PHASE 1: CHUẨN BỊ HÀNH TRANG (Ngày 0)
         RecoveryTask(id: 'p1_d0_ment', day: 0, phase: InternPhase.preparation, pillar: PillarType.mental, title: 'Đọc cẩm nang "Hành trang LG Display"', description: 'Tìm hiểu trước về văn hóa công ty, quy định 5S và các vật dụng cần thiết mang theo khi đi làm.', durationMinutes: 15, isLocked: false),

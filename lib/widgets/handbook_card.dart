@@ -55,9 +55,23 @@ class HandbookCard extends StatelessWidget {
             const SizedBox(height: 12),
             Row(
               children: [
-                Icon(Icons.person_outline, size: 14, color: AppTheme.onSurfaceSecondary(context)),
+                Icon(
+                  Icons.person_outline_rounded,
+                  size: 14,
+                  color: AppTheme.onSurfaceSecondary(context),
+                ),
                 const SizedBox(width: 4),
-                Text(article.author, style: TextStyle(fontSize: 12, color: AppTheme.onSurfaceSecondary(context))),
+                Expanded(
+                  child: Text(
+                    article.author,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.onSurfaceSecondary(context),
+                    ),
+                  ),
+                ),
               ],
             ),
           ],

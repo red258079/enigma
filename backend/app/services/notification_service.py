@@ -1,4 +1,4 @@
-﻿import os
+import os
 import logging
 from typing import Optional, List
 from datetime import datetime, timezone
@@ -23,20 +23,43 @@ def _init_firebase():
     if _firebase_initialized:
         return True
 
-    cred_path = settings.FIREBASE_CREDENTIALS_PATH
-    if cred_path and os.path.exists(cred_path):
+    import json
+
+    # 1. Check if raw JSON string is provided in environment variable (Render / Cloud friendly)
+    cred_json_str = os.getenv("FIREBASE_CREDENTIALS_JSON")
+    if cred_json_str:
         try:
-            cred = credentials.Certificate(cred_path)
+            cred_dict = json.loads(cred_json_str)
+            cred = credentials.Certificate(cred_dict)
             firebase_admin.initialize_app(cred)
             _firebase_initialized = True
-            logger.info(f"[FCM] Firebase Admin SDK initialized with: {cred_path}")
+            logger.info("[FCM] Firebase Admin SDK initialized successfully via FIREBASE_CREDENTIALS_JSON env var.")
             return True
         except Exception as e:
-            logger.warning(f"[FCM] Failed to initialize Firebase Admin with credentials: {e}")
-            return False
-    else:
-        logger.info("[FCM] Firebase credentials not found – running in local/simulated push mode.")
-        return False
+            logger.warning(f"[FCM] Failed to initialize Firebase Admin with FIREBASE_CREDENTIALS_JSON: {e}")
+
+    # 2. Check candidate file paths (Local / Render Secret Files)
+    candidate_paths = [
+        settings.FIREBASE_CREDENTIALS_PATH,
+        "firebase_credentials.json",
+        "backend/firebase_credentials.json",
+        "/etc/secrets/firebase_credentials.json",  # Render secret file default mount
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "firebase_credentials.json"),
+    ]
+
+    for path in candidate_paths:
+        if path and os.path.exists(path):
+            try:
+                cred = credentials.Certificate(path)
+                firebase_admin.initialize_app(cred)
+                _firebase_initialized = True
+                logger.info(f"[FCM] Firebase Admin SDK initialized with file: {path}")
+                return True
+            except Exception as e:
+                logger.warning(f"[FCM] Failed to initialize Firebase Admin with file {path}: {e}")
+
+    logger.info("[FCM] Firebase credentials not found – running in local/simulated push mode.")
+    return False
 
 # Try initializing on module load
 _init_firebase()
@@ -72,6 +95,15 @@ class NotificationService:
                 message = messaging.Message(
                     notification=messaging.Notification(title=title, body=body),
                     data={str(k): str(v) for k, v in (data_payload or {}).items()},
+                    android=messaging.AndroidConfig(
+                        priority="high",
+                        notification=messaging.AndroidNotification(
+                            channel_id="enigma_high_importance_channel",
+                            priority="high",
+                            default_sound=True,
+                            default_vibrate_timings=True,
+                        ),
+                    ),
                     token=fcm_token,
                 )
                 fcm_id = messaging.send(message)
@@ -86,7 +118,7 @@ class NotificationService:
             log.is_sent = True
             log.sent_at = datetime.now(timezone.utc)
             log.fcm_message_id = "simulated_fcm_" + str(datetime.now(timezone.utc).timestamp())
-            print(f"\n🔔 [PUSH NOTIFICATION SIMULATED]\n  To User : {user.email if user else user_id}\n  Title   : {title}\n  Body    : {body}\n  Type    : {notif_type.value}\n")
+            logger.info(f"[PUSH SIMULATED] To: {user.email if user else user_id} | Title: {title} | Body: {body}")
 
         db.add(log)
         await db.commit()
@@ -124,8 +156,11 @@ class NotificationService:
         limit: int = 50,
         offset: int = 0,
     ):
-        """Lấy danh sách thông báo của user + đếm số chưa đọc."""
-        conditions = [NotificationLog.user_id == user_id]
+        """Lấy danh sách thông báo của user + đếm số chưa đọc (bao gồm thông báo phát chung)."""
+        from sqlalchemy import or_
+
+        user_filter = or_(NotificationLog.user_id == user_id, NotificationLog.user_id.is_(None))
+        conditions = [user_filter]
         if unread_only:
             conditions.append(NotificationLog.is_read == False)
 
@@ -140,12 +175,12 @@ class NotificationService:
         items = result.scalars().all()
 
         # Count total
-        count_q = select(func.count(NotificationLog.id)).where(NotificationLog.user_id == user_id)
+        count_q = select(func.count(NotificationLog.id)).where(user_filter)
         total = (await db.execute(count_q)).scalar() or 0
 
         # Count unread
         unread_q = select(func.count(NotificationLog.id)).where(
-            NotificationLog.user_id == user_id,
+            user_filter,
             NotificationLog.is_read == False,
         )
         unread_count = (await db.execute(unread_q)).scalar() or 0

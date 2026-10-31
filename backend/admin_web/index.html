@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ENIGMA Admin — Cổng Quản Trị Hệ Thống Sức Khỏe & Thích Nghi Thực Tập Sinh</title>
+  <meta name="description" content="Trang web quản trị ứng dụng Enigma dành cho Quản lý Doanh nghiệp và Cố vấn Thực tập">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="styles.css?v=20261031_04">
+</head>
+<body class="dark-theme">
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- Layout Wrapper -->
+  <div class="app-container">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <div class="brand-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-name">ENIGMA</span>
+            <span class="brand-tag">PORTAL ADMIN</span>
+          </div>
+        </div>
+        <button class="icon-btn sidebar-collapse-btn" id="sidebar-toggle" title="Thu gọn / Mở rộng menu" aria-label="Thu gọn / Mở rộng menu">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Navigation Links -->
+      <nav class="nav-menu">
+        <div class="nav-section-title">CHỨC NĂNG CHÍNH</div>
+        <button class="nav-item active" data-tab="dashboard" title="Tổng Quan Dashboard">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="9"/>
+            <rect x="14" y="3" width="7" height="5"/>
+            <rect x="14" y="12" width="7" height="9"/>
+            <rect x="3" y="16" width="7" height="5"/>
+          </svg>
+          <span>Tổng Quan Dashboard</span>
+          <span class="badge badge-subtle" id="nav-badge-today">Live</span>
+        </button>
+
+        <button class="nav-item" data-tab="students" title="Quản Lý Sinh Viên">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <span>Quản Lý Sinh Viên</span>
+          <span class="badge badge-info" id="nav-badge-students">--</span>
+        </button>
+
+        <button class="nav-item highlight-danger" data-tab="burnout" title="Cảnh Báo Kiệt Sức">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>Cảnh Báo Kiệt Sức</span>
+          <span class="badge badge-danger pulse-dot" id="nav-badge-alerts">0</span>
+        </button>
+
+        <div class="nav-section-title">QUẢN LÝ NỘI DUNG & AI</div>
+
+        <button class="nav-item" data-tab="handbook" title="Cẩm Nang & RAG AI">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          </svg>
+          <span>Cẩm Nang & RAG AI</span>
+          <span class="badge badge-primary" id="nav-badge-articles">--</span>
+        </button>
+
+        <button class="nav-item" data-tab="tasks" title="Nhiệm Vụ 3 Giai Đoạn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 11l3 3L22 4"/>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          <span>Nhiệm Vụ 3 Giai Đoạn</span>
+        </button>
+
+        <button class="nav-item" data-tab="notifications" title="Phát Loa Thông Báo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+          <span>Phát Loa Thông Báo</span>
+        </button>
+
+        <div class="nav-section-title">HỆ THỐNG</div>
+
+        <button class="nav-item" data-tab="settings" title="Cấu Hình & Kết Nối">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span>Cấu Hình & Kết Nối</span>
+        </button>
+      </nav>
+
+      <!-- Sidebar Footer -->
+      <div class="sidebar-footer">
+        <div class="admin-profile-card">
+          <div class="avatar" id="admin-avatar">AD</div>
+          <div class="admin-info">
+            <span class="admin-name" id="admin-display-name">Cố Vấn Trưởng</span>
+            <span class="admin-role">Admin Quyền Cao</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      
+      <!-- Top Navbar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-btn mobile-menu-btn" id="mobile-menu-btn" aria-label="Mở menu">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+          </button>
+          <div class="page-title-box">
+            <h1 class="page-title" id="page-title">Tổng Quan Dashboard</h1>
+            <p class="page-subtitle" id="page-subtitle">Theo dõi trạng thái 5 trụ cột sức khỏe và rủi ro kiệt sức của thực tập sinh</p>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <!-- Connection Status Pill -->
+          <div class="connection-status-pill" id="connection-pill" title="Nhấn để đổi chế độ">
+            <span class="status-indicator live" id="status-indicator"></span>
+            <span class="status-label" id="status-label">Render Cloud</span>
+            <button class="status-switch-btn" id="toggle-data-mode-btn" title="Chuyển chế độ Live / Demo">Đổi sang Demo</button>
+          </div>
+
+          <!-- Quick Refresh Button -->
+          <button class="btn btn-secondary btn-icon" id="btn-refresh" title="Tải lại dữ liệu">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6"/>
+              <path d="M1 20v-6h6"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            <span>Làm Mới</span>
+          </button>
+
+          <!-- Quick Action Button -->
+          <button class="btn btn-primary" id="btn-quick-broadcast">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 2L11 13"/>
+              <path d="M22 2l-7 20-4-9-9-4 20-7z"/>
+            </svg>
+            <span>Gửi Thông Báo</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- TAB 1: DASHBOARD -->
+      <section class="tab-pane active" id="pane-dashboard">
+        
+        <!-- Key Metrics Cards -->
+        <div class="kpi-grid">
+          
+          <div class="kpi-card card-glow-primary">
+            <div class="kpi-header">
+              <span class="kpi-title">Tổng Sinh Viên Thực Tập</span>
+              <div class="kpi-icon icon-primary">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                  <circle cx="9" cy="7" r="4"/>
+                </svg>
+              </div>
+            </div>
+            <div class="kpi-value" id="kpi-total-students">--</div>
+            <div class="kpi-footer">
+              <span class="trend-badge positive">↑ 100% tài khoản</span>
+              <span class="kpi-caption">Tại LG Display & đối tác</span>
+            </div>
+          </div>
+
+          <div class="kpi-card card-glow-emerald">
+            <div class="kpi-header">
+              <span class="kpi-title">Điểm Danh Hôm Nay</span>
+              <div class="kpi-icon icon-emerald">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+              </div>
+            </div>
+            <div class="kpi-value" id="kpi-checkins-today">--</div>
+            <div class="kpi-footer">
+              <span class="trend-badge neutral" id="kpi-checkin-rate">--% tỷ lệ</span>
+              <span class="kpi-caption">Đã nhận Gacha Quote</span>
+            </div>
+          </div>
+
+          <div class="kpi-card card-glow-rose">
+            <div class="kpi-header">
+              <span class="kpi-title">Nguy Cơ Kiệt Sức Cao</span>
+              <div class="kpi-icon icon-rose">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                </svg>
+              </div>
+            </div>
+            <div class="kpi-value text-danger" id="kpi-burnout-risk">--</div>
+            <div class="kpi-footer">
+              <span class="trend-badge negative">Stress ≥ 4 hoặc ngủ &lt; 5h</span>
+              <span class="kpi-caption">Cần hỗ trợ sớm</span>
+            </div>
+          </div>
+
+          <div class="kpi-card card-glow-indigo">
+            <div class="kpi-header">
+              <span class="kpi-title">Nhiệm Vụ Đã Hoàn Thành</span>
+              <div class="kpi-icon icon-indigo">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 20h9"/>
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                </svg>
+              </div>
+            </div>
+            <div class="kpi-value" id="kpi-completed-tasks">--</div>
+            <div class="kpi-footer">
+              <span class="trend-badge positive">3 Giai đoạn thích nghi</span>
+              <span class="kpi-caption">Chuẩn bị ➔ Hòa nhập ➔ Duy trì</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="charts-grid">
+          
+          <!-- Chart 1: 5 Pillars Radar Chart -->
+          <div class="chart-card">
+            <div class="chart-header">
+              <div>
+                <h3 class="chart-title">Đánh Giá 5 Trụ Cột Sức Khỏe Toàn Khóa</h3>
+                <p class="chart-subtitle">Trung bình điểm số Giấc ngủ, Thể chất, Tâm lý, Xã hội và Sự nghiệp</p>
+              </div>
+              <span class="tag tag-indigo">5 Pillars Analysis</span>
+            </div>
+            <div class="chart-body radar-chart-wrapper">
+              <canvas id="chart-pillars"></canvas>
+            </div>
+          </div>
+
+          <!-- Chart 2: Stress Distribution & Shifts -->
+          <div class="chart-card">
+            <div class="chart-header">
+              <div>
+                <h3 class="chart-title">Phân Bổ Căng Thẳng & Ca Kíp</h3>
+                <p class="chart-subtitle">Tỷ lệ theo cấp độ Stress (1-5) và đặc thù làm việc</p>
+              </div>
+              <span class="tag tag-emerald">Workplace Health</span>
+            </div>
+            <div class="chart-body">
+              <canvas id="chart-stress"></canvas>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Trend Line Chart -->
+        <div class="chart-card full-width">
+          <div class="chart-header">
+            <div>
+              <h3 class="chart-title">Xu Hướng Check-in & Sức Khỏe 7 Ngày Vừa Qua</h3>
+              <p class="chart-subtitle">Số lượng sinh viên tương tác và thời lượng ngủ trung bình mỗi ngày</p>
+            </div>
+            <div class="chart-legend-box">
+              <span class="legend-item"><span class="legend-dot" style="background:#06b6d4"></span> Số lượt điểm danh</span>
+              <span class="legend-item"><span class="legend-dot" style="background:#10b981"></span> Giờ ngủ TB (h)</span>
+            </div>
+          </div>
+          <div class="chart-body timeline-chart-wrapper">
+            <canvas id="chart-trend"></canvas>
+          </div>
+        </div>
+
+        <!-- Dashboard Bottom Two Columns -->
+        <div class="dash-bottom-grid">
+          
+          <!-- Recent Check-in Feed -->
+          <div class="card recent-feed-card">
+            <div class="card-header">
+              <h3 class="card-title">Hoạt Động & Gacha Quote Gần Nhất</h3>
+              <button class="btn btn-sm btn-ghost" id="btn-view-all-students">Xem tất cả</button>
+            </div>
+            <div class="card-body feed-list" id="dashboard-feed-list">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <!-- Quick Advisor Actions & Burnout Watchlist -->
+          <div class="card burnout-watchlist-card">
+            <div class="card-header">
+              <h3 class="card-title text-danger">🚨 Sinh Viên Cần Chú Ý Đặc Biệt</h3>
+              <span class="badge badge-danger" id="quick-alert-count">--</span>
+            </div>
+            <div class="card-body" id="dashboard-watchlist">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+      <!-- TAB 2: STUDENTS DIRECTORY -->
+      <section class="tab-pane" id="pane-students">
+        
+        <!-- Quick Stat Strip for Student Management -->
+        <div class="students-stat-strip">
+          <div class="stat-mini-card active" data-pill-filter="all">
+            <div class="stat-mini-icon icon-primary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+              </svg>
+            </div>
+            <div class="stat-mini-data">
+              <span class="stat-mini-label">Tổng Sinh Viên</span>
+              <strong class="stat-mini-value" id="sq-total-students">--</strong>
+            </div>
+            <span class="stat-mini-tag">Tất cả</span>
+          </div>
+
+          <div class="stat-mini-card" data-pill-filter="high_risk">
+            <div class="stat-mini-icon icon-rose">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <div class="stat-mini-data">
+              <span class="stat-mini-label">Nguy Cơ Kiệt Sức</span>
+              <strong class="stat-mini-value text-danger" id="sq-high-risk">--</strong>
+            </div>
+            <span class="stat-mini-tag tag-rose">Stress ≥ 4</span>
+          </div>
+
+          <div class="stat-mini-card" data-pill-filter="night_shift">
+            <div class="stat-mini-icon icon-indigo">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            </div>
+            <div class="stat-mini-data">
+              <span class="stat-mini-label">Ca Đêm (20h-8h)</span>
+              <strong class="stat-mini-value" id="sq-night-shift">--</strong>
+            </div>
+            <span class="stat-mini-tag tag-indigo">Theo dõi giấc ngủ</span>
+          </div>
+
+          <div class="stat-mini-card" data-pill-filter="streak">
+            <div class="stat-mini-icon icon-amber">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+              </svg>
+            </div>
+            <div class="stat-mini-data">
+              <span class="stat-mini-label">Duy Trì Streak</span>
+              <strong class="stat-mini-value" id="sq-streak-active">--</strong>
+            </div>
+            <span class="stat-mini-tag tag-amber">Tương tác tốt</span>
+          </div>
+        </div>
+
+        <!-- University Cohort Filter Bar (Chọn Nhanh Trường Đại Học & Nơi Thực Tập) -->
+        <div class="university-quick-bar">
+          <div class="university-quick-header">
+            <div class="flex items-center gap-2">
+              <div class="uni-header-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 21h18"/>
+                  <path d="M5 21V7l7-4 7 4v14"/>
+                  <path d="M9 21v-6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6"/>
+                </svg>
+              </div>
+              <div>
+                <span class="font-semibold text-sm">Gom Nhóm Sinh Viên Theo Trường Đại Học & Nơi Thực Tập</span>
+                <span class="text-xs text-muted" style="margin-left: 8px;">(Quản lý sinh viên theo từng đoàn trường thực tập liên kết)</span>
+              </div>
+            </div>
+            <div class="uni-actions-right">
+              <button type="button" class="btn-text-sm" id="btn-toggle-all-groups" title="Mở rộng hoặc thu gọn tất cả nhóm trường">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M7 13l5 5 5-5M7 6l5 5 5-5"/>
+                </svg>
+                <span id="btn-toggle-all-text">Thu Gọn Tất Cả</span>
+              </button>
+            </div>
+          </div>
+          <div class="university-chips-scroll" id="university-chips-bar">
+            <!-- Dynamically populated chips: Tất cả, ĐH Bình Dương, ĐH Bách Khoa... -->
+          </div>
+        </div>
+
+        <!-- Unified Controls Toolbar -->
+        <div class="students-toolbar">
+          <div class="toolbar-top-row">
+            <div class="search-box">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input type="text" id="students-search-input" placeholder="Tìm theo Tên, MSSV, Email, Trường (VD: Bình Dương), Công ty...">
+            </div>
+
+            <div class="toolbar-selects">
+              <select id="students-filter-university" class="select-control" title="Lọc theo Trường Đại học">
+                <option value="">Tất cả các trường</option>
+              </select>
+
+              <select id="students-filter-company" class="select-control" title="Lọc theo Công ty Thực tập">
+                <option value="">Tất cả công ty thực tập</option>
+              </select>
+
+              <select id="students-filter-phase" class="select-control">
+                <option value="">Tất cả giai đoạn</option>
+                <option value="preparation">1. Chuẩn bị (Preparation)</option>
+                <option value="adaptation">2. Hòa nhập (Adaptation)</option>
+                <option value="sustain">3. Duy trì (Sustain)</option>
+              </select>
+
+              <select id="students-filter-risk" class="select-control">
+                <option value="all">Mọi mức rủi ro</option>
+                <option value="high">Nguy cơ kiệt sức (Stress ≥ 4)</option>
+                <option value="active">Chỉ tài khoản hoạt động</option>
+              </select>
+
+              <!-- View Switcher -->
+              <div class="view-mode-toggle" id="students-view-toggle">
+                <button type="button" class="view-toggle-btn active" id="view-mode-grouped" title="Hiển thị gom nhóm theo từng trường & đơn vị thực tập">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7"/>
+                    <rect x="14" y="3" width="7" height="7"/>
+                    <rect x="14" y="14" width="7" height="7"/>
+                    <rect x="3" y="14" width="7" height="7"/>
+                  </svg>
+                  <span>Theo Trường</span>
+                </button>
+                <button type="button" class="view-toggle-btn" id="view-mode-flat" title="Hiển thị bảng toàn bộ sinh viên">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="8" y1="6" x2="21" y2="6"/>
+                    <line x1="8" y1="12" x2="21" y2="12"/>
+                    <line x1="8" y1="18" x2="21" y2="18"/>
+                    <line x1="3" y1="6" x2="3.01" y2="6"/>
+                    <line x1="3" y1="12" x2="3.01" y2="12"/>
+                    <line x1="3" y1="18" x2="3.01" y2="18"/>
+                  </svg>
+                  <span>Bảng Toàn Bộ</span>
+                </button>
+              </div>
+
+              <button class="btn btn-secondary" id="btn-export-students">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>Xuất CSV</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="filter-pills-bar">
+            <span class="filter-pills-label">Lọc nhanh:</span>
+            <button class="pill-btn active" data-pill="all">Tất cả sinh viên</button>
+            <button class="pill-btn" data-pill="high_risk">🚨 Cần can thiệp gấp</button>
+            <button class="pill-btn" data-pill="night_shift">🌙 Thực tập ca đêm</button>
+            <button class="pill-btn" data-pill="streak">🔥 Chuỗi Streak &gt; 0</button>
+            <button class="pill-btn" data-pill="active">✅ Tài khoản hoạt động</button>
+          </div>
+        </div>
+
+        <!-- Grouped View by University (Mặc định) -->
+        <div id="students-grouped-container" class="students-grouped-container">
+          <!-- Dynamically populated with University Cohort Cards -->
+        </div>
+
+        <!-- Flat Table View (Khi chuyển sang chế độ Bảng Toàn Bộ) -->
+        <div class="table-wrapper" id="students-flat-wrapper" style="display: none;">
+          <table class="data-table" id="students-table">
+            <thead>
+              <tr>
+                <th style="width: 220px;">Sinh Viên</th>
+                <th style="width: 150px;">MSSV / Trường</th>
+                <th style="width: 180px;">Công Ty & Ca Làm</th>
+                <th style="width: 130px;">Giai Đoạn</th>
+                <th style="width: 110px;">Stress Gần Nhất</th>
+                <th style="width: 90px;">Giờ Ngủ</th>
+                <th style="width: 95px;">Chuỗi Streak</th>
+                <th style="width: 105px;">Trạng Thái</th>
+                <th style="width: 165px;" class="text-right">Hành Động Cố Vấn</th>
+              </tr>
+            </thead>
+            <tbody id="students-tbody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+
+      </section>
+
+      <!-- TAB 3: BURNOUT ALERT CENTER -->
+      <section class="tab-pane" id="pane-burnout">
+        
+        <div class="alert-banner">
+          <div class="alert-banner-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </div>
+          <div class="alert-banner-content">
+            <h4>Hệ Thống Sàng Lọc Rủi Ro Kiệt Sức Thực Tập Sinh (Burnout Prevention AI)</h4>
+            <p>Hệ thống tự động phát hiện sinh viên có dấu hiệu stress kéo dài (mức 4-5), thiếu ngủ trầm trọng (&lt; 5h/ngày) hoặc ghi chú tâm trạng tiêu cực trong nhật ký vi mô. Cố vấn có thể can thiệp trực tiếp hoặc gửi thông điệp động viên khẩn cấp.</p>
+          </div>
+        </div>
+
+        <div class="burnout-cards-grid" id="burnout-cards-container">
+          <!-- Dynamically populated with alert cards -->
+        </div>
+
+      </section>
+
+      <!-- TAB 4: HANDBOOK & AI RAG -->
+      <section class="tab-pane" id="pane-handbook">
+        
+        <div class="table-controls">
+          <div class="search-box">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" id="handbook-search-input" placeholder="Tìm kiếm bài viết cẩm nang...">
+          </div>
+
+          <div class="filter-group">
+            <select id="handbook-filter-category" class="select-control">
+              <option value="all">Tất cả danh mục 5 trụ cột</option>
+              <option value="sleep">1. Giấc ngủ (Sleep)</option>
+              <option value="physical">2. Thể chất (Physical)</option>
+              <option value="mental">3. Tâm lý (Mental)</option>
+              <option value="social">4. Xã hội (Social)</option>
+              <option value="career">5. Sự nghiệp (Career)</option>
+            </select>
+
+            <select id="handbook-filter-status" class="select-control">
+              <option value="">Mọi trạng thái</option>
+              <option value="published">Đã xuất bản (Published)</option>
+              <option value="pending_review">Chờ duyệt (Pending)</option>
+              <option value="draft">Bản nháp (Draft)</option>
+            </select>
+
+            <button class="btn btn-primary" id="btn-create-article">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              <span>Thêm Bài Mới</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="handbook-articles-grid" id="handbook-articles-container">
+          <!-- Dynamically populated with handbook cards -->
+        </div>
+
+      </section>
+
+      <!-- TAB 5: TASKS ADAPTATION -->
+      <section class="tab-pane" id="pane-tasks">
+        
+        <div class="table-controls">
+          <div class="filter-group-full">
+            <div class="btn-group" id="task-phase-switcher">
+              <button class="btn btn-tab active" data-phase="preparation">Giai Đoạn 1: Chuẩn Bị</button>
+              <button class="btn btn-tab" data-phase="adaptation">Giai Đoạn 2: Hòa Nhập</button>
+              <button class="btn btn-tab" data-phase="sustain">Giai Đoạn 3: Duy Trì</button>
+            </div>
+            
+            <button class="btn btn-primary" id="btn-create-task">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              <span>Thêm Nhiệm Vụ Mới</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="tasks-table-wrapper">
+          <table class="data-table" id="tasks-table">
+            <thead>
+              <tr>
+                <th>Nhiệm Vụ Thích Nghi</th>
+                <th>Trụ Cột</th>
+                <th>Thời Lượng</th>
+                <th>Ngày Mở Khóa</th>
+                <th>Lượt Hoàn Thành</th>
+                <th>Trạng Thái</th>
+                <th class="text-right">Hành Động</th>
+              </tr>
+            </thead>
+            <tbody id="tasks-tbody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+
+      </section>
+
+      <!-- TAB 6: BROADCAST NOTIFICATIONS -->
+      <section class="tab-pane" id="pane-notifications">
+        
+        <div class="broadcast-layout">
+          
+          <!-- Broadcast Form -->
+          <div class="card form-card">
+            <div class="card-header">
+              <h3 class="card-title">Gửi Thông Báo Phát Loa Toàn Hệ Thống</h3>
+              <p class="card-subtitle">Thông báo sẽ xuất hiện trên màn hình ứng dụng và trung tâm chuông của sinh viên</p>
+            </div>
+            <div class="card-body">
+              <form id="broadcast-form">
+                <div class="form-group">
+                  <label for="notif-title" class="form-label">Tiêu đề thông báo *</label>
+                  <input type="text" id="notif-title" class="form-input" placeholder="Ví dụ: Nhắc nhở cân bằng giấc ngủ sau ca đêm..." required>
+                </div>
+
+                <div class="form-group">
+                  <label for="notif-type" class="form-label">Phân loại thông báo</label>
+                  <select id="notif-type" class="form-input">
+                    <option value="system">Hệ thống & Quy định chung</option>
+                    <option value="reminder_checkin">Nhắc nhở điểm danh & Gacha quote</option>
+                    <option value="reminder_journal">Nhắc nhở viết nhật ký vi mô</option>
+                    <option value="new_article">Bài viết cẩm nang mới bổ sung</option>
+                    <option value="streak_warning">Cảnh báo duy trì chuỗi Streak</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="notif-target" class="form-label">Đối tượng nhận</label>
+                  <select id="notif-target" class="form-input">
+                    <option value="student">Tất cả sinh viên thực tập</option>
+                    <option value="all">Toàn bộ tài khoản (gồm cả admin)</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="notif-body" class="form-label">Nội dung chi tiết *</label>
+                  <textarea id="notif-body" class="form-textarea" rows="4" placeholder="Nhập lời khuyên, thông báo hoặc hướng dẫn..." required></textarea>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block" id="btn-submit-broadcast">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="22" y1="2" x2="11" y2="13"/>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                  <span>Phát Thông Báo Ngay</span>
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- History Table -->
+          <div class="card history-card">
+            <div class="card-header">
+              <h3 class="card-title">Lịch Sử Thông Báo Đã Gửi</h3>
+            </div>
+            <div class="card-body">
+              <div class="history-list" id="notification-history-list">
+                <!-- Dynamically populated -->
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+      <!-- TAB 7: SETTINGS & CONFIG -->
+      <section class="tab-pane" id="pane-settings">
+        
+        <div class="settings-grid">
+          
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">Cấu Hình Kết Nối API Backend</h3>
+              <p class="card-subtitle">Thiết lập URL kết nối đến máy chủ FastAPI của Enigma</p>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label">Backend API URL (Render Cloud)</label>
+                <div class="input-with-button">
+                  <input type="text" id="setting-api-url" class="form-input" value="https://mentality-38jh.onrender.com">
+                  <button class="btn btn-secondary" id="btn-test-connection">Kiểm Tra</button>
+                </div>
+                <small class="form-hint">Máy chủ Render Cloud Production: https://mentality-38jh.onrender.com</small>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Admin Bearer Token</label>
+                <input type="password" id="setting-admin-token" class="form-input" value="enigma_admin_master_secret">
+                <small class="form-hint">Mã token bí mật dùng để gọi API quản trị</small>
+              </div>
+
+              <button class="btn btn-primary" id="btn-save-settings">Lưu Cấu Hình</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">Dữ Liệu & Sao Lưu</h3>
+              <p class="card-subtitle">Xuất báo cáo định kỳ cho Phòng Đào tạo & Doanh nghiệp tiếp nhận</p>
+            </div>
+            <div class="card-body space-y-4">
+              <div class="action-box">
+                <div>
+                  <h4 class="font-semibold">Xuất Danh Sách Sinh Viên (JSON)</h4>
+                  <p class="text-subtle">Bao gồm chỉ số 5 trụ cột và lịch sử check-in</p>
+                </div>
+                <button class="btn btn-secondary" id="btn-export-json">Xuất JSON</button>
+              </div>
+
+              <div class="action-box">
+                <div>
+                  <h4 class="font-semibold">Xóa Cache Phiên Làm Việc</h4>
+                  <p class="text-subtle">Xóa token đã lưu và reset về dữ liệu mẫu</p>
+                </div>
+                <button class="btn btn-danger-outline" id="btn-clear-cache">Đặt Lại Cache</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+    </main>
+
+  </div>
+
+  <!-- MODALS -->
+
+  <!-- Modal 1: Chi Tiết Sinh Viên (Drawer / Popup) -->
+  <div class="modal-backdrop" id="user-modal">
+    <div class="modal-container modal-large">
+      <div class="modal-header">
+        <div class="user-modal-title-box">
+          <h3 class="modal-title" id="um-fullname">Họ và Tên Sinh Viên</h3>
+          <span class="badge badge-primary" id="um-student-id">MSSV</span>
+          <span class="badge badge-emerald" id="um-phase">Giai đoạn</span>
+        </div>
+        <button class="modal-close-btn" data-close-modal="user-modal">&times;</button>
+      </div>
+
+      <div class="modal-body user-modal-grid">
+        <!-- Cột trái: Thông tin cá nhân & Điểm 5 trụ cột -->
+        <div class="user-info-col">
+          <div class="user-profile-badge">
+            <div class="avatar avatar-lg" id="um-avatar">SV</div>
+            <div>
+              <h4 id="um-name-card">Nguyễn Văn A</h4>
+              <p class="text-subtle" id="um-email">email@sinhvien.edu.vn</p>
+              <p class="text-subtle" id="um-company">LG Display — Ban Sản Xuất</p>
+            </div>
+          </div>
+
+          <div class="pillar-mini-scores" id="um-pillar-scores">
+            <!-- Dynamic scores -->
+          </div>
+
+          <div class="user-actions-row">
+            <button class="btn btn-sm btn-secondary" id="um-btn-toggle-status">Khóa Tài Khoản</button>
+            <button class="btn btn-sm btn-danger-outline" id="um-btn-send-intervention">Can Thiệp Tâm Lý</button>
+          </div>
+        </div>
+
+        <!-- Cột phải: Biểu đồ lịch sử stress & nhật ký gần nhất -->
+        <div class="user-history-col">
+          <h4 class="font-semibold mb-2">Nhật Ký Vi Mô 7 Ngày Gần Nhất</h4>
+          <div class="user-journals-list" id="um-journals-list">
+            <!-- Dynamic journals -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Tạo / Chỉnh Sửa Bài Viết Cẩm Nang -->
+  <div class="modal-backdrop" id="article-modal">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title" id="article-modal-title">Soạn Thảo Bài Viết Cẩm Nang RAG</h3>
+        <button class="modal-close-btn" data-close-modal="article-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="article-form">
+          <input type="hidden" id="art-id">
+          <div class="form-group">
+            <label class="form-label">Tiêu đề bài viết *</label>
+            <input type="text" id="art-title" class="form-input" placeholder="Ví dụ: Bí quyết cân bằng nhịp sinh học khi đổi ca đêm..." required>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group col-half">
+              <label class="form-label">Danh mục 5 Trụ cột *</label>
+              <select id="art-category" class="form-input">
+                <option value="sleep">1. Giấc ngủ (Sleep)</option>
+                <option value="physical">2. Thể chất (Physical)</option>
+                <option value="mental">3. Tâm lý (Mental)</option>
+                <option value="social">4. Xã hội (Social)</option>
+                <option value="career">5. Sự nghiệp (Career)</option>
+              </select>
+            </div>
+
+            <div class="form-group col-half">
+              <label class="form-label">Trạng thái xuất bản</label>
+              <select id="art-status" class="form-input">
+                <option value="published">Xuất bản ngay (Published)</option>
+                <option value="pending_review">Chờ duyệt (Pending Review)</option>
+                <option value="draft">Bản nháp (Draft)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Tóm tắt ngắn (Dùng cho AI RAG & Tìm kiếm)</label>
+            <input type="text" id="art-summary" class="form-input" placeholder="Tóm tắt lời khuyên ngắn gọn trong 1-2 câu...">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Nội dung bài viết chi tiết *</label>
+            <textarea id="art-content" class="form-textarea" rows="6" placeholder="Nhập nội dung chia sẻ kinh nghiệm thực chiến từ cựu sinh viên..." required></textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Thẻ Tags (cách nhau bởi dấu phẩy)</label>
+            <input type="text" id="art-tags" class="form-input" placeholder="ca-dem, giac-ngu, phuc-hoi, 5s">
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-close-modal="article-modal">Hủy</button>
+            <button type="submit" class="btn btn-primary" id="btn-save-article">Lưu & Đồng Bộ AI</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Tạo / Sửa Nhiệm Vụ Thích Nghi -->
+  <div class="modal-backdrop" id="task-modal">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title" id="task-modal-title">Thêm Nhiệm Vụ Thích Nghi</h3>
+        <button class="modal-close-btn" data-close-modal="task-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="task-form">
+          <input type="hidden" id="task-id">
+          <div class="form-group">
+            <label class="form-label">Tiêu đề nhiệm vụ *</label>
+            <input type="text" id="task-title" class="form-input" placeholder="Ví dụ: Thiết lập quy tắc phòng trọ yên tĩnh ca đêm..." required>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group col-half">
+              <label class="form-label">Giai đoạn thực tập *</label>
+              <select id="task-phase" class="form-input">
+                <option value="preparation">Giai đoạn 1: Chuẩn bị</option>
+                <option value="adaptation">Giai đoạn 2: Hòa nhập</option>
+                <option value="sustain">Giai đoạn 3: Duy trì</option>
+              </select>
+            </div>
+
+            <div class="form-group col-half">
+              <label class="form-label">Trụ cột sức khỏe *</label>
+              <select id="task-pillar" class="form-input">
+                <option value="sleep">Giấc ngủ (Sleep)</option>
+                <option value="physical">Thể chất (Physical)</option>
+                <option value="mental">Tâm lý (Mental)</option>
+                <option value="social">Xã hội (Social)</option>
+                <option value="career">Sự nghiệp (Career)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group col-half">
+              <label class="form-label">Thời lượng ước tính (phút)</label>
+              <input type="number" id="task-duration" class="form-input" value="15" min="1">
+            </div>
+
+            <div class="form-group col-half">
+              <label class="form-label">Mở khóa vào ngày thứ (Day)</label>
+              <input type="number" id="task-unlock-day" class="form-input" value="1" min="0">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Mô tả và Hướng dẫn thực hiện *</label>
+            <textarea id="task-desc" class="form-textarea" rows="4" placeholder="Mô tả cụ thể các bước thực hành..." required></textarea>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-close-modal="task-modal">Hủy</button>
+            <button type="submit" class="btn btn-primary">Lưu Nhiệm Vụ</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 4: Trung Tâm Can Thiệp Tâm Lý & Lời Khuyên Cố Vấn -->
+  <div class="modal-backdrop" id="intervention-modal">
+    <div class="modal-container modal-large">
+      <div class="modal-header">
+        <div class="flex items-center gap-2">
+          <div class="intervention-icon-glow">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="modal-title">Gửi Can Thiệp Tâm Lý & Lời Khuyên Cho Thực Tập Sinh</h3>
+            <p class="text-xs text-muted">Thông điệp sẽ gửi trực tiếp đến hộp thư & thông báo đẩy của sinh viên</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-close-modal="intervention-modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Target Student Information Badge -->
+        <div class="intervention-target-card" id="im-student-card">
+          <div class="im-avatar" id="im-avatar">Đ</div>
+          <div class="im-info">
+            <div class="im-name-row">
+              <h4 id="im-name">Đức Thuần</h4>
+              <span class="im-badge" id="im-student-id">23050067</span>
+              <span class="im-phase-tag" id="im-phase">Giai đoạn: Chuẩn bị</span>
+            </div>
+            <p class="im-meta text-xs text-muted" id="im-workplace">LG Display &bull; Ca ngày (8h-20h)</p>
+            <div class="im-metrics-strip" id="im-metrics">
+              <span class="im-metric-pill" id="im-stress-pill">Stress: <strong>2/5</strong></span>
+              <span class="im-metric-pill" id="im-sleep-pill">Giấc ngủ: <strong>7.0h</strong></span>
+              <span class="im-metric-pill" id="im-streak-pill">Streak: <strong>1 ngày</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <form id="intervention-form">
+          <input type="hidden" id="im-user-id">
+
+          <!-- Quick Templates Chips -->
+          <div class="form-group mb-3">
+            <label class="form-label flex justify-between">
+              <span>Chọn Lời Khuyên Mẫu Phù Hợp:</span>
+              <small class="text-muted">Nhấn vào để điền nhanh nội dung chuyên gia</small>
+            </label>
+            <div class="quick-templates-box">
+              <button type="button" class="quick-template-chip" data-template="sleep">
+                🌙 Hồi Phục Ca Đêm
+              </button>
+              <button type="button" class="quick-template-chip" data-template="stress">
+                🧘 Xả Stress & Thở Sâu
+              </button>
+              <button type="button" class="quick-template-chip" data-template="counseling">
+                🤝 Gặp Cố Vấn 1-1
+              </button>
+              <button type="button" class="quick-template-chip" data-template="physical">
+                💪 Giảm Đau Mỏi & ESD
+              </button>
+              <button type="button" class="quick-template-chip" data-template="cheer">
+                🌟 Động Viên Tinh Thần
+              </button>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group col-half">
+              <label class="form-label">Tiêu đề thông điệp *</label>
+              <input type="text" id="im-title" class="form-input" value="Thông điệp can thiệp & hỗ trợ từ Cố vấn" required>
+            </div>
+
+            <div class="form-group col-half">
+              <label class="form-label">Phân loại can thiệp</label>
+              <select id="im-type" class="form-input">
+                <option value="counseling">Tư vấn tâm lý & giải tỏa căng thẳng</option>
+                <option value="recovery">Hồi phục thể chất & giấc ngủ</option>
+                <option value="mentor">Hướng dẫn hòa nhập công việc & ca kíp</option>
+                <option value="urgent">Can thiệp khủng hoảng khẩn cấp</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group col-half">
+              <label class="form-label">Mức độ ưu tiên</label>
+              <select id="im-priority" class="form-input">
+                <option value="high">Ưu tiên cao (Hiển thị nổi bật)</option>
+                <option value="urgent">Khẩn cấp (Cảnh báo rung & push tức thì)</option>
+                <option value="normal">Thông thường</option>
+              </select>
+            </div>
+
+            <div class="form-group col-half">
+              <label class="form-label">Kênh gửi bổ sung</label>
+              <div class="checkbox-row" style="margin-top: 10px;">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="im-push-toggle" checked>
+                  <span>Gửi Push Notification tức thì đến điện thoại</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label flex justify-between">
+              <span>Nội dung lời khuyên & can thiệp *</span>
+              <small class="text-muted" id="im-char-count">0/500 ký tự</small>
+            </label>
+            <textarea id="im-message" class="form-textarea" rows="4" placeholder="Nhập lời khuyên, giải pháp cụ thể hoặc hẹn gặp sinh viên..." required></textarea>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-close-modal="intervention-modal">Đóng</button>
+            <button type="submit" class="btn btn-primary btn-glow-rose" id="btn-submit-intervention">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+              <span>Gửi Can Thiệp Tâm Lý Ngay</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main JavaScript App -->
+  <script src="app.js?v=20261031_04"></script>
+</body>
+</html>

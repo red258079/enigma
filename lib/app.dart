@@ -5,6 +5,7 @@ import 'state/auth_state.dart';
 import 'state/app_state.dart';
 import 'state/theme_state.dart';
 import 'state/notification_state.dart';
+import 'core/services/sync_service.dart';
 import 'screens/auth/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/student/notifications_screen.dart';
@@ -24,6 +25,7 @@ class EnigmaApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AppState()),
         ChangeNotifierProvider(create: (_) => ThemeState()),
         ChangeNotifierProvider(create: (_) => NotificationState()),
+        ChangeNotifierProvider.value(value: SyncService.instance),
       ],
       child: Consumer<ThemeState>(
         builder: (context, themeState, child) {

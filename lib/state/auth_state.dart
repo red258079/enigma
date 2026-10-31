@@ -4,11 +4,15 @@ import '../models/user.dart';
 import '../core/utils/storage.dart';
 import '../core/constants/app_constants.dart';
 import '../core/api/api_client.dart';
+import '../core/services/sync_service.dart';
+import '../core/services/push_notification_service.dart';
+import '../core/onboarding/services/feature_onboarding_service.dart';
 import 'package:dio/dio.dart';
 
 class AuthState extends ChangeNotifier {
   User? _user;
   bool _isLoading = false;
+  bool _isOfflineMode = false;
   String? _error;
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
@@ -20,6 +24,7 @@ class AuthState extends ChangeNotifier {
   bool get isAuthenticated => _user != null;
   bool get isGuest => _user?.isGuest ?? false;
   bool get isLoading => _isLoading;
+  bool get isOfflineMode => _isOfflineMode;
   String? get error => _error;
 
   // ── Guest Mode / Bỏ qua đăng nhập ─────────────────────────────────────────
@@ -32,55 +37,97 @@ class AuthState extends ChangeNotifier {
       studentId: 'Khách trải nghiệm',
     );
     _error = null;
+    FeatureOnboardingService.instance.initForUser('guest');
     notifyListeners();
   }
 
-  // ── Startup: check stored token ──────────────────────────────────────────
+  // ── Startup: check stored token (Offline-First) ───────────────────────────
   Future<void> checkAuth() async {
-    // 1. Phục hồi ngay user từ cache (0ms delay) để giao diện hiển thị ngay lập tức
-    final cached = StorageUtil.getCachedUser();
-    if (cached != null) {
-      _user = User.fromJson(cached);
-      notifyListeners();
-    }
-
     _isLoading = true;
     notifyListeners();
 
     try {
       final token = await StorageUtil.getToken();
+      final cachedUser = StorageUtil.getCachedUser();
+
       if (token != null) {
         if (AppConstants.useMockApi) {
-          await Future.delayed(const Duration(milliseconds: 300));
-          _user = User(
+          await Future.delayed(const Duration(seconds: 1));
+          _user = cachedUser ?? User(
             id: 'u1',
             email: 'student@example.com',
             name: 'Nguyễn Văn A',
             role: 'student',
             studentId: 'SV123456',
           );
+          if (cachedUser == null) {
+            await StorageUtil.saveCachedUser(_user!);
+          }
+          _isOfflineMode = false;
         } else {
-          final response = await ApiClient.instance.get('/auth/me');
-          _user = User.fromJson(response.data);
-          await StorageUtil.saveCachedUser(_user!.toJson());
+          try {
+            final response = await ApiClient.instance.get('/auth/me');
+            _user = User.fromJson(response.data);
+            await StorageUtil.saveCachedUser(_user!);
+            _isOfflineMode = false;
+          } on DioException catch (dioErr) {
+            final isNetworkError = dioErr.type == DioExceptionType.connectionError ||
+                dioErr.type == DioExceptionType.connectionTimeout ||
+                dioErr.type == DioExceptionType.sendTimeout ||
+                dioErr.type == DioExceptionType.receiveTimeout ||
+                dioErr.type == DioExceptionType.unknown;
+
+            if (isNetworkError) {
+              // Ngoại tuyến: KHÔNG xóa token! Dùng dữ liệu cachedUser đã lưu
+              debugPrint('[AuthState] Không có mạng khi checkAuth. Chuyển sang chế độ ngoại tuyến.');
+              if (cachedUser != null) {
+                _user = cachedUser;
+                _isOfflineMode = true;
+              }
+            } else if (dioErr.response?.statusCode == 401 || dioErr.response?.statusCode == 403) {
+              // Token thực sự hết hạn / bị thu hồi
+              _user = null;
+              await StorageUtil.clearAllTokens();
+              await StorageUtil.clearCachedUser();
+              await _tryAutoLogin();
+            } else {
+              // Lỗi server khác (500...): ưu tiên dùng cachedUser
+              if (cachedUser != null) {
+                _user = cachedUser;
+                _isOfflineMode = true;
+              }
+            }
+          }
         }
       }
 
-      // Nếu không có token hoặc token hết hạn, thử tự động đăng nhập
-      // bằng credentials đã lưu từ "Ghi nhớ đăng nhập"
+      // Nếu chưa có user, thử tự động đăng nhập lại bằng credentials đã ghi nhớ
       if (_user == null) {
         await _tryAutoLogin();
       }
+
+      // Nếu vẫn chưa có nhưng trên máy còn cachedUser:
+      if (_user == null && cachedUser != null) {
+        _user = cachedUser;
+        _isOfflineMode = true;
+      }
     } catch (e) {
-      if (_user == null) {
-        await StorageUtil.clearAllTokens();
-        await StorageUtil.clearCachedUser();
-        // Token lỗi/hết hạn → thử tự động đăng nhập lại
-        await _tryAutoLogin();
+      debugPrint('[AuthState] checkAuth exception: $e');
+      final cachedUser = StorageUtil.getCachedUser();
+      if (cachedUser != null) {
+        _user = cachedUser;
+        _isOfflineMode = true;
       }
     } finally {
       _isLoading = false;
       notifyListeners();
+      // Nếu có mạng và đã đăng nhập, kích hoạt đồng bộ dữ liệu chờ
+      if (isAuthenticated) {
+        FeatureOnboardingService.instance.initForUser(_user?.id);
+        if (!_isOfflineMode) {
+          SyncService.instance.syncPendingData();
+        }
+      }
     }
   }
 
@@ -101,6 +148,8 @@ class AuthState extends ChangeNotifier {
           }
           await StorageUtil.saveToken('mock_access_token_123');
           await StorageUtil.saveRefreshToken('mock_refresh_token_123');
+          await StorageUtil.saveCachedUser(_user!);
+          _isOfflineMode = false;
         } else {
           final response = await ApiClient.instance.post('/auth/login', data: {
             'email': email,
@@ -110,19 +159,42 @@ class AuthState extends ChangeNotifier {
           await StorageUtil.saveToken(response.data['access_token']);
           await StorageUtil.saveRefreshToken(response.data['refresh_token']);
           _user = User.fromJson(response.data['user']);
-          await StorageUtil.saveCachedUser(_user!.toJson());
+          await StorageUtil.saveCachedUser(_user!);
+          _isOfflineMode = false;
+          PushNotificationService.syncTokenWithBackend();
         }
       }
+    } on DioException catch (dioErr) {
+      final isNetworkError = dioErr.type == DioExceptionType.connectionError ||
+          dioErr.type == DioExceptionType.connectionTimeout ||
+          dioErr.type == DioExceptionType.sendTimeout ||
+          dioErr.type == DioExceptionType.receiveTimeout;
+
+      if (isNetworkError) {
+        // Mất mạng: KHÔNG xóa credentials! Dùng profile đã lưu
+        debugPrint('[AuthState] Mất mạng khi auto-login. Giữ nguyên thông tin đăng nhập.');
+        final cached = StorageUtil.getCachedUser();
+        if (cached != null) {
+          _user = cached;
+          _isOfflineMode = true;
+        }
+      } else {
+        // Sai mật khẩu thật hoặc tài khoản bị khóa -> xóa credentials
+        debugPrint('Auto-login failed with server reject: $dioErr');
+        await StorageUtil.clearRememberCredentials();
+        _user = null;
+      }
     } catch (e) {
-      // Auto-login thất bại (sai mật khẩu, server lỗi...) → xóa credentials cũ
-      debugPrint('Auto-login failed: $e');
-      await StorageUtil.clearRememberCredentials();
-      await StorageUtil.clearCachedUser();
-      _user = null;
+      debugPrint('Auto-login exception: $e');
+      final cached = StorageUtil.getCachedUser();
+      if (cached != null) {
+        _user = cached;
+        _isOfflineMode = true;
+      }
     }
   }
 
-  // ── Login ─────────────────────────────────────────────────────────────────
+  // ── Login (Hỗ trợ cả Online và Offline) ────────────────────────────────────
   Future<bool> login(String email, String password) async {
     _isLoading = true;
     _error = null;
@@ -130,7 +202,7 @@ class AuthState extends ChangeNotifier {
 
     try {
       if (AppConstants.useMockApi) {
-        await Future.delayed(const Duration(seconds: 2));
+        await Future.delayed(const Duration(seconds: 1));
         if (email == 'admin@enigma.com') {
           _user = User(id: 'a1', email: email, name: 'Admin', role: 'admin');
         } else {
@@ -138,6 +210,8 @@ class AuthState extends ChangeNotifier {
         }
         await StorageUtil.saveToken('mock_access_token_123');
         await StorageUtil.saveRefreshToken('mock_refresh_token_123');
+        await StorageUtil.saveCachedUser(_user!);
+        _isOfflineMode = false;
       } else {
         final response = await ApiClient.instance.post('/auth/login', data: {
           'email': email,
@@ -147,10 +221,50 @@ class AuthState extends ChangeNotifier {
         await StorageUtil.saveToken(response.data['access_token']);
         await StorageUtil.saveRefreshToken(response.data['refresh_token']);
         _user = User.fromJson(response.data['user']);
-        await StorageUtil.saveCachedUser(_user!.toJson());
+        await StorageUtil.saveCachedUser(_user!);
+        _isOfflineMode = false;
+        FeatureOnboardingService.instance.initForUser(_user?.id);
+        SyncService.instance.syncPendingData();
+        PushNotificationService.syncTokenWithBackend();
       }
       return true;
     } on DioException catch (e) {
+      final isNetworkError = e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.unknown;
+
+      if (isNetworkError) {
+        // Kiểm tra xem thiết bị đã từng đăng nhập tài khoản này trước đó chưa
+        final cachedUser = StorageUtil.getCachedUser();
+        final rememberCreds = await StorageUtil.getRememberCredentials();
+        final bioCreds = await StorageUtil.getBiometricCredentials();
+
+        final matchCached = cachedUser != null &&
+            cachedUser.email.trim().toLowerCase() == email.trim().toLowerCase();
+        final matchRemember = rememberCreds != null &&
+            rememberCreds['email']?.trim().toLowerCase() == email.trim().toLowerCase();
+        final matchBio = bioCreds != null &&
+            bioCreds['email']?.trim().toLowerCase() == email.trim().toLowerCase();
+
+        if (matchCached || matchRemember || matchBio) {
+          // Cho phép vào app ngoại tuyến bằng tài khoản đã lưu
+          _user = cachedUser ?? User(
+            id: 'offline_user',
+            email: email.trim(),
+            name: email.split('@').first,
+            role: 'student',
+          );
+          _isOfflineMode = true;
+          _error = null;
+          return true;
+        } else {
+          _error = 'Không có kết nối mạng. Hãy đăng nhập ít nhất một lần khi có mạng để sử dụng ngoại tuyến.';
+          return false;
+        }
+      }
+
       if (e.response?.data is Map && e.response?.data['detail'] != null) {
         final detail = e.response?.data['detail'];
         _error = detail is List ? detail.map((d) => d['msg']).join('\n') : detail.toString();
@@ -216,7 +330,11 @@ class AuthState extends ChangeNotifier {
       await StorageUtil.saveToken(response.data['access_token']);
       await StorageUtil.saveRefreshToken(response.data['refresh_token']);
       _user = User.fromJson(response.data['user']);
-      await StorageUtil.saveCachedUser(_user!.toJson());
+      await StorageUtil.saveCachedUser(_user!);
+      _isOfflineMode = false;
+      FeatureOnboardingService.instance.initForUser(_user?.id);
+      SyncService.instance.syncPendingData();
+      PushNotificationService.syncTokenWithBackend();
       return true;
     } on DioException catch (e) {
       if (e.response?.data is Map && e.response?.data['detail'] != null) {
@@ -270,7 +388,11 @@ class AuthState extends ChangeNotifier {
         await StorageUtil.saveToken(response.data['access_token']);
         await StorageUtil.saveRefreshToken(response.data['refresh_token']);
         _user = User.fromJson(response.data['user']);
-        await StorageUtil.saveCachedUser(_user!.toJson());
+        await StorageUtil.saveCachedUser(_user!);
+        _isOfflineMode = false;
+        FeatureOnboardingService.instance.initForUser(_user?.id);
+        SyncService.instance.syncPendingData();
+        PushNotificationService.syncTokenWithBackend();
       }
       return true;
     } on DioException catch (e) {
@@ -306,14 +428,18 @@ class AuthState extends ChangeNotifier {
     }
     await StorageUtil.clearAllTokens();
     await StorageUtil.clearCachedUser();
+    _isOfflineMode = false;
     _user = null;
+    FeatureOnboardingService.instance.initForUser(null);
     notifyListeners();
   }
 
   /// Gọi khi Dio interceptor phát hiện cả refresh token hết hạn
   void forceLogout() {
     StorageUtil.clearCachedUser();
+    _isOfflineMode = false;
     _user = null;
+    FeatureOnboardingService.instance.initForUser(null);
     notifyListeners();
   }
 
@@ -407,7 +533,7 @@ class AuthState extends ChangeNotifier {
 
     try {
       if (AppConstants.useMockApi || isGuest) {
-        await Future.delayed(const Duration(milliseconds: 600));
+        await Future.delayed(const Duration(milliseconds: 500));
         _user = _user?.copyWith(
           name: name,
           studentId: studentId,
@@ -430,7 +556,7 @@ class AuthState extends ChangeNotifier {
         data['avatar_url'] = avatarUrl;
       }
 
-      // Cập nhật ngay trên giao diện (Optimistic UI) để người dùng không phải chờ
+      // Optimistic UI update
       if (_user != null) {
         _user = _user!.copyWith(
           name: name,
@@ -439,14 +565,14 @@ class AuthState extends ChangeNotifier {
           major: major,
           avatarUrl: avatarUrl ?? _user?.avatarUrl,
         );
-        await StorageUtil.saveCachedUser(_user!.toJson());
+        await StorageUtil.saveCachedUser(_user!);
         notifyListeners();
       }
 
       final response = await ApiClient.instance.put('/users/me', data: data);
 
       _user = User.fromJson(response.data);
-      await StorageUtil.saveCachedUser(_user!.toJson());
+      await StorageUtil.saveCachedUser(_user!);
       _isLoading = false;
       notifyListeners();
       return true;
@@ -454,13 +580,13 @@ class AuthState extends ChangeNotifier {
       if (e.response?.data is Map && e.response?.data['detail'] != null) {
         _error = e.response?.data['detail'].toString();
       } else {
-        _error = 'Không thể cập nhật thông tin. Vui lòng kiểm tra lại.';
+        _error = 'Cập nhật thất bại. Vui lòng thử lại sau.';
       }
       _isLoading = false;
       notifyListeners();
       return false;
     } catch (e) {
-      _error = 'Lỗi cập nhật: $e';
+      _error = 'Đã có lỗi xảy ra: $e';
       _isLoading = false;
       notifyListeners();
       return false;
